@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -109,7 +110,14 @@ const MOCK_EMISSIONS = [
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b'];
 
-function KpiCard({ label, value, sub, trend }) {
+type KpiCardProps = {
+  label: string;
+  value: string;
+  sub?: string;
+  trend?: number;
+};
+
+function KpiCard({ label, value, sub, trend }: KpiCardProps) {
   return (
     <Card className="rounded-2xl shadow-sm">
       <CardHeader className="pb-2">
@@ -365,7 +373,9 @@ export default function EmissionsDetailPage() {
                 <BarChart data={byYear} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
                   <XAxis dataKey="year" />
                   <YAxis />
-                  <Tooltip formatter={(value) => `${fmt.format(value)} t`} />
+                  <Tooltip formatter={(value: unknown) => 
+                    typeof value === 'number' ? `${fmt.format(value)} t` : `${value} t`
+                  } />
                   <Legend />
                   <Bar dataKey="scope1" name="Scope 1" fill={COLORS[0]} stackId="a" />
                   <Bar dataKey="scope2" name="Scope 2" fill={COLORS[1]} stackId="a" />
@@ -389,7 +399,10 @@ export default function EmissionsDetailPage() {
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ name, percent }) => `${name.split(' ')[0]} ${(percent * 100).toFixed(0)}%`}
+                    label={(props) => {
+                      const { name, percent } = props as { name: string; percent?: number };
+                      return `${name.split(' ')[0]} ${(percent ? percent * 100 : 0).toFixed(0)}%`;
+                    }}
                     outerRadius={80}
                     fill="#8884d8"
                     dataKey="value"
@@ -398,7 +411,7 @@ export default function EmissionsDetailPage() {
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value) => `${fmt.format(value)} t`} />
+                  <Tooltip formatter={(value: number) => `${fmt.format(value)} t`} />
                 </PieChart>
               </ResponsiveContainer>
             </CardContent>
