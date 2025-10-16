@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   ArrowLeft, 
   Database, 
@@ -18,7 +19,9 @@ import {
   Activity,
   Loader2,
   Search,
-  X
+  X,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -44,8 +47,10 @@ export default function EmissionsDetail() {
   
   const [selectedOrg, setSelectedOrg] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [quickRange, setQuickRange] = useState('3years');
   const [range, setRange] = useState({ from: 2022, to: 2024 });
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
 
   const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080';
   const yearNow = new Date().getFullYear();
@@ -60,6 +65,18 @@ export default function EmissionsDetail() {
     }
   }, [selectedOrg, range]);
 
+  // 초기 로드 시 전체 데이터의 연도 범위 설정
+  useEffect(() => {
+    if (emissions.length > 0 && !selectedOrg) {
+      const years = emissions.map(e => e.year).sort((a, b) => a - b);
+      if (years.length > 0) {
+        const minYear = years[0];
+        const maxYear = years[years.length - 1];
+        setRange({ from: minYear, to: maxYear });
+      }
+    }
+  }, [emissions.length]);
+
   const loadOrganizations = async () => {
     setLoading(true);
     try {
@@ -68,7 +85,10 @@ export default function EmissionsDetail() {
 
       if (response.ok) {
         const data = await response.json();
+        console.log('✅ Organizations loaded:', data.length);
         setOrganizations(data);
+      } else {
+        console.warn('⚠️ Organizations API returned:', response.status);
       }
     } catch (error) {
       console.error('❌ Organization load failed:', error);
@@ -90,21 +110,52 @@ export default function EmissionsDetail() {
       
       if (response.ok) {
         const data = await response.json();
+        console.log('✅ Emissions loaded:', data.length, 'records');
         setEmissions(data);
+      } else {
+        console.warn('⚠️ Emissions API returned:', response.status);
+        setEmissions([]);
       }
     } catch (error) {
       console.error('❌ Emissions load failed:', error);
+      setEmissions([]);
     } finally {
       setLoadingEmissions(false);
     }
   };
 
   const filteredOrganizations = useMemo(() => {
-    if (!searchTerm) return [];
-    return organizations.filter(org => 
-      org.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    if (searchTerm) {
+      return organizations.filter(org => 
+        org.name.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+    return organizations;
   }, [organizations, searchTerm]);
+
+  const paginatedOrganizations = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return filteredOrganizations.slice(startIndex, endIndex);
+  }, [filteredOrganizations, currentPage]);
+
+  const totalPages = Math.ceil(filteredOrganizations.length / itemsPerPage);
+
+  const exportToCSV = () => {
+    const headers = ['조직명', '연도', '총배출량(tCO₂e)', '검증상태'];
+    const rows = filteredEmissions.map(e => [
+      e.organizationName,
+      e.year,
+      e.totalEmissions,
+      e.verificationStatus
+    ]);
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `emissions_${Date.now()}.csv`;
+    link.click();
+  };
 
   const filteredEmissions = useMemo(() => {
     return emissions.filter(e => 
@@ -134,46 +185,48 @@ export default function EmissionsDetail() {
   const byYear = useMemo(() => {
     const map = new Map();
     for (const e of filteredEmissions) {
-      const m = map.get(e.year) ?? { year: e.year, total: 0 };
-      m.total += Number(e.totalEmissions) || 0;
-      map.set(e.year, m);
+      const m = map.get(e.year) ?? 0;
+      map.set(e.year, m + (Number(e.totalEmissions) || 0));
     }
-    return [...map.values()].sort((a, b) => a.year - b.year);
+    return Array.from(map.entries())
+      .map(([year, total]) => ({ year, total }))
+      .sort((a, b) => a.year - b.year);
   }, [filteredEmissions]);
 
-  const handleQuickRange = (rangeType: string) => {
-    setQuickRange(rangeType);
-    switch(rangeType) {
-      case '1year':
-        setRange({ from: yearNow, to: yearNow });
-        break;
-      case '3years':
-        setRange({ from: yearNow - 2, to: yearNow });
-        break;
-      case '5years':
-        setRange({ from: yearNow - 4, to: yearNow });
-        break;
+  const selectedOrgName = selectedOrg 
+    ? organizations.find(o => o.id === Number(selectedOrg))?.name 
+    : '';
+
+  // 선택된 조직의 사용 가능한 연도 목록
+  const availableYears = useMemo(() => {
+    if (!selectedOrg) {
+      // 조직이 선택되지 않았으면 최근 20년
+      return Array.from({ length: 20 }, (_, i) => yearNow - i);
+    }
+    
+    // 선택된 조직의 배출량 데이터에서 연도 추출
+    const orgEmissions = emissions.filter(e => e.organizationId === Number(selectedOrg));
+    const years = [...new Set(orgEmissions.map(e => e.year))].sort((a, b) => b - a);
+    
+    // 데이터가 있으면 해당 연도들, 없으면 전체 연도
+    return years.length > 0 ? years : Array.from({ length: 20 }, (_, i) => yearNow - i);
+  }, [selectedOrg, emissions, yearNow]);
+
+  const handleOrgSelect = (orgId: number, orgName: string) => {
+    setSelectedOrg(String(orgId));
+    setSearchTerm('');
+    setShowDropdown(false);
+    setCurrentPage(1);
+    
+    // 선택된 조직의 데이터가 있는 연도 범위로 자동 조정
+    const orgEmissions = emissions.filter(e => e.organizationId === orgId);
+    if (orgEmissions.length > 0) {
+      const years = orgEmissions.map(e => e.year).sort((a, b) => a - b);
+      const minYear = years[0];
+      const maxYear = years[years.length - 1];
+      setRange({ from: minYear, to: maxYear });
     }
   };
-
-  const exportToCSV = () => {
-    const headers = ['조직명', '연도', '총배출량', '검증상태'];
-    const rows = filteredEmissions.map(e => [
-      e.organizationName,
-      e.year,
-      Number(e.totalEmissions) || 0,
-      e.verificationStatus
-    ]);
-    
-    const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `emissions_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-  };
-
-  const selectedOrgName = selectedOrg ? organizations.find(o => o.id === Number(selectedOrg))?.name : '';
 
   if (loading) {
     return (
@@ -183,149 +236,375 @@ export default function EmissionsDetail() {
         display: 'flex', 
         alignItems: 'center', 
         justifyContent: 'center',
-        background: 'linear-gradient(to bottom right, #f9fafb, #eff6ff)'
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
       }}>
         <div style={{ textAlign: 'center' }}>
           <Loader2 style={{ 
-            width: '48px', 
-            height: '48px', 
-            margin: '0 auto 16px auto', 
+            width: '56px', 
+            height: '56px', 
+            margin: '0 auto 24px auto', 
             display: 'block',
             animation: 'spin 1s linear infinite',
-            color: '#2563eb'
+            color: 'white'
           }} />
-          <p style={{ color: '#4b5563' }}>데이터를 불러오는 중...</p>
+          <p style={{ color: 'white', fontSize: '18px', fontWeight: 500 }}>데이터를 불러오는 중...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{ minHeight: '100vh', width: '100%', background: 'linear-gradient(to bottom right, #f9fafb, #eff6ff)' }}>
+    <div style={{ 
+      minHeight: '100vh', 
+      width: '100vw', 
+      background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
+      margin: 0,
+      padding: 0,
+      boxSizing: 'border-box'
+    }}>
       {/* 헤더 */}
-      <header style={{ width: '100%', backgroundColor: 'rgba(255, 255, 255, 0.8)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #e5e7eb', position: 'sticky', top: 0, zIndex: 50 }}>
-        <div style={{ width: '100%', maxWidth: '1280px', margin: '0 auto', padding: '16px 24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+      <header style={{ 
+        width: '100vw', 
+        backgroundColor: 'rgba(255, 255, 255, 0.95)', 
+        backdropFilter: 'blur(12px)', 
+        borderBottom: '1px solid #e5e7eb', 
+        position: 'sticky', 
+        top: 0, 
+        zIndex: 50,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+        margin: 0,
+        padding: 0
+      }}>
+        <div style={{ 
+          width: '100%',
+          padding: '16px 24px',
+          boxSizing: 'border-box'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
             <Button 
               variant="ghost" 
               size="icon" 
               onClick={() => navigate('/')}
-              className="rounded-full w-10 h-10"
+              style={{ 
+                borderRadius: '50%', 
+                width: '48px', 
+                height: '48px',
+                transition: 'all 0.2s'
+              }}
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft style={{ width: '24px', height: '24px' }} />
             </Button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
-              <div style={{ padding: '8px', background: 'linear-gradient(to bottom right, #10b981, #059669)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
-                <Factory style={{ width: '20px', height: '20px', color: 'white' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1 }}>
+              <div style={{ 
+                padding: '12px', 
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', 
+                borderRadius: '16px', 
+                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)' 
+              }}>
+                <Factory style={{ width: '28px', height: '28px', color: 'white' }} />
               </div>
               <div>
-                <h1 style={{ fontSize: '24px', fontWeight: 'bold', background: 'linear-gradient(to right, #059669, #047857)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                <h1 style={{ 
+                  fontSize: '28px', 
+                  fontWeight: 'bold', 
+                  background: 'linear-gradient(135deg, #059669, #047857)', 
+                  WebkitBackgroundClip: 'text', 
+                  WebkitTextFillColor: 'transparent',
+                  marginBottom: '4px'
+                }}>
                   온실가스 배출량 분석
                 </h1>
-                <p style={{ fontSize: '14px', color: '#6b7280' }}>기업별 온실가스 배출량 추적 및 분석 (단위: tCO₂e)</p>
+                <p style={{ fontSize: '15px', color: '#6b7280' }}>기업별 온실가스 배출량 추적 및 분석 (단위: tCO₂e)</p>
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Badge variant={isApiConnected ? "default" : "secondary"} className="rounded-full px-4 py-2">
-                <Database className="w-4 h-4 mr-2 inline-block" />
-                <span>{isApiConnected ? "실시간 데이터" : "연결 대기"}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <Badge 
+                variant={isApiConnected ? "default" : "secondary"} 
+                style={{ 
+                  borderRadius: '9999px', 
+                  padding: '8px 16px',
+                  fontSize: '14px',
+                  fontWeight: 500
+                }}
+              >
+                <Database style={{ width: '16px', height: '16px', marginRight: '8px' }} />
+                <span>{isApiConnected ? "실시간 연결" : "연결 대기"}</span>
               </Badge>
               <Button 
                 variant="outline" 
                 size="sm" 
                 onClick={exportToCSV}
-                className="h-10 px-4"
+                style={{ 
+                  height: '40px', 
+                  padding: '0 20px',
+                  borderRadius: '10px',
+                  fontWeight: 500
+                }}
               >
-                <Download className="w-4 h-4 mr-2 inline-block" />
-                <span className="inline-block">CSV 내보내기</span>
+                <Download style={{ width: '16px', height: '16px', marginRight: '8px' }} />
+                <span>CSV 내보내기</span>
               </Button>
             </div>
           </div>
         </div>
       </header>
 
-      <main style={{ width: '100%', maxWidth: '1280px', margin: '0 auto', padding: '32px 24px' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {/* 필터 섹션 */}
-          <Card className="rounded-2xl shadow-md border-0">
-            <CardContent className="p-6">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-                <Filter className="w-5 h-5 text-gray-600" />
-                <h3 style={{ fontWeight: 600, color: '#111827' }}>필터 설정</h3>
+      {/* 메인 콘텐츠 */}
+      <main style={{ 
+        width: '100vw',
+        padding: '24px',
+        boxSizing: 'border-box',
+        margin: 0
+      }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%' }}>
+          {/* 필터 섹션 - 개선된 UI */}
+          <Card style={{ 
+            borderRadius: '20px', 
+            boxShadow: '0 4px 20px rgba(0,0,0,0.08)', 
+            border: 'none',
+            background: 'white',
+            width: '100%'
+          }}>
+            <CardContent style={{ padding: '28px' }}>
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '12px', 
+                marginBottom: '24px' 
+              }}>
+                <Filter style={{ width: '28px', height: '28px', color: '#059669' }} />
+                <h3 style={{ 
+                  fontSize: '24px', 
+                  fontWeight: 'bold', 
+                  color: '#111827' 
+                }}>필터 설정</h3>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-                {/* 조직 검색 */}
-                <div style={{ position: 'relative' }}>
-                  <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#374151', marginBottom: '8px' }}>
+              
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(3, 1fr)', 
+                gap: '16px' 
+              }}>
+                {/* 조직 검색 - 개선된 드롭다운 */}
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <label style={{ 
+                    display: 'block', 
+                    fontSize: '16px', 
+                    fontWeight: 700, 
+                    color: '#111827', 
+                    marginBottom: '14px' 
+                  }}>
                     조직 검색
                   </label>
                   <div style={{ position: 'relative' }}>
-                    <Search style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', width: '16px', height: '16px', color: '#9ca3af', pointerEvents: 'none' }} />
+                    <Search style={{ 
+                      position: 'absolute', 
+                      left: '16px', 
+                      top: '50%', 
+                      transform: 'translateY(-50%)', 
+                      width: '20px', 
+                      height: '20px', 
+                      color: '#9ca3af', 
+                      pointerEvents: 'none',
+                      zIndex: 1
+                    }} />
                     <Input
-                      placeholder="조직명 검색..."
+                      placeholder="조직명을 검색하거나 클릭하세요..."
                       value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      style={{ paddingLeft: '36px', height: '40px' }}
+                      onChange={(e) => {
+                        setSearchTerm(e.target.value);
+                        setShowDropdown(true);
+                        setCurrentPage(1);
+                      }}
+                      onFocus={() => setShowDropdown(true)}
+                      style={{ 
+                        paddingLeft: '48px',
+                        height: '48px',
+                        borderRadius: '12px',
+                        border: '2px solid #e5e7eb',
+                        fontSize: '15px',
+                        transition: 'all 0.2s'
+                      }}
                     />
                   </div>
                   
-                  {/* 검색 결과 드롭다운 - 5-6개 높이 + 스크롤 */}
-                  {searchTerm && filteredOrganizations.length > 0 && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '100%',
-                      left: 0,
-                      right: 0,
-                      marginTop: '4px',
-                      background: 'white',
-                      border: '2px solid #3b82f6',
-                      borderRadius: '8px',
-                      boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
-                      zIndex: 1000,
-                      maxHeight: '240px',
-                      overflowY: 'auto'
+                  {/* 드롭다운 */}
+                  {showDropdown && (
+                    <div style={{ 
+                      position: 'absolute', 
+                      top: '100%', 
+                      left: 0, 
+                      right: 0, 
+                      marginTop: '8px',
+                      background: 'white', 
+                      borderRadius: '12px', 
+                      boxShadow: '0 10px 40px rgba(0,0,0,0.15)', 
+                      zIndex: 50,
+                      maxHeight: '400px',
+                      overflow: 'hidden',
+                      border: '1px solid #e5e7eb'
                     }}>
-                      {filteredOrganizations.map((org) => (
-                        <button
-                          key={org.id}
-                          onClick={() => {
-                            setSelectedOrg(String(org.id));
-                            setSearchTerm('');
-                          }}
-                          style={{
-                            width: '100%',
-                            textAlign: 'left',
-                            padding: '12px 16px',
-                            borderBottom: '1px solid #e5e7eb',
-                            cursor: 'pointer',
-                            transition: 'background 0.2s',
-                            background: 'white'
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = '#eff6ff'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
-                        >
-                          <div style={{ fontWeight: 500, color: '#111827' }}>{org.name}</div>
-                          <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
-                            {org.type || '조직'}
+                      {paginatedOrganizations.length === 0 ? (
+                        <div style={{ 
+                          padding: '32px 16px', 
+                          textAlign: 'center', 
+                          color: '#6b7280' 
+                        }}>
+                          <AlertCircle style={{ 
+                            width: '48px', 
+                            height: '48px', 
+                            margin: '0 auto 12px auto', 
+                            color: '#9ca3af' 
+                          }} />
+                          <p style={{ fontSize: '15px', fontWeight: 500, marginBottom: '8px' }}>
+                            {organizations.length === 0 
+                              ? '배출량 데이터가 있는 조직이 없습니다' 
+                              : '검색 결과가 없습니다'}
+                          </p>
+                          <p style={{ fontSize: '13px', color: '#9ca3af' }}>
+                            {organizations.length === 0 
+                              ? 'GIR 엑셀 파일을 업로드하여 데이터를 추가하세요' 
+                              : '다른 검색어를 입력해보세요'}
+                          </p>
+                        </div>
+                      ) : (
+                        <React.Fragment>
+                          <div style={{ 
+                            maxHeight: '300px', 
+                            overflowY: 'auto',
+                            padding: '8px'
+                          }}>
+                            {paginatedOrganizations.map((org, idx) => (
+                              <button
+                                key={org.id}
+                                onClick={() => handleOrgSelect(org.id, org.name)}
+                                style={{ 
+                                  width: '100%', 
+                                  padding: '16px 18px', 
+                                  textAlign: 'left', 
+                                  border: 'none',
+                                  background: idx % 2 === 0 ? 'white' : '#f9fafb',
+                                  cursor: 'pointer',
+                                  borderRadius: '10px',
+                                  marginBottom: '6px',
+                                  transition: 'all 0.2s'
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = '#f0fdf4';
+                                  e.currentTarget.style.transform = 'translateX(4px)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = idx % 2 === 0 ? 'white' : '#f9fafb';
+                                  e.currentTarget.style.transform = 'translateX(0)';
+                                }}
+                              >
+                                <div style={{ fontWeight: 600, color: '#111827', marginBottom: '6px', fontSize: '15px' }}>
+                                  {org.name}
+                                </div>
+                                <div style={{ fontSize: '13px', color: '#6b7280' }}>
+                                  {org.type || '조직'}
+                                </div>
+                              </button>
+                            ))}
                           </div>
-                        </button>
-                      ))}
-                      <div style={{ padding: '8px 16px', background: '#f9fafb', borderTop: '1px solid #e5e7eb', fontSize: '12px', color: '#6b7280' }}>
-                        {filteredOrganizations.length}개 검색 결과
-                      </div>
+                          
+                          {/* 페이지네이션 */}
+                          {totalPages > 1 && (
+                            <div style={{ 
+                              padding: '12px 16px', 
+                              background: '#f9fafb', 
+                              borderTop: '1px solid #e5e7eb',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between'
+                            }}>
+                              <div style={{ fontSize: '13px', color: '#6b7280' }}>
+                                {filteredOrganizations.length}개 중 {((currentPage - 1) * itemsPerPage) + 1}-
+                                {Math.min(currentPage * itemsPerPage, filteredOrganizations.length)}번째
+                              </div>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                  disabled={currentPage === 1}
+                                  style={{ 
+                                    height: '32px', 
+                                    width: '32px', 
+                                    padding: 0,
+                                    borderRadius: '8px'
+                                  }}
+                                >
+                                  <ChevronLeft style={{ width: '16px', height: '16px' }} />
+                                </Button>
+                                <div style={{ 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  padding: '0 12px',
+                                  fontSize: '13px',
+                                  fontWeight: 500
+                                }}>
+                                  {currentPage} / {totalPages}
+                                </div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                  disabled={currentPage === totalPages}
+                                  style={{ 
+                                    height: '32px', 
+                                    width: '32px', 
+                                    padding: 0,
+                                    borderRadius: '8px'
+                                  }}
+                                >
+                                  <ChevronRight style={{ width: '16px', height: '16px' }} />
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </React.Fragment>
+                      )}
                     </div>
                   )}
                   
                   {/* 선택된 조직 표시 */}
                   {selectedOrg && selectedOrgName && (
-                    <div style={{ marginTop: '8px' }}>
-                      <Badge variant="secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ marginTop: '16px' }}>
+                      <Badge 
+                        variant="secondary" 
+                        style={{ 
+                          display: 'inline-flex', 
+                          alignItems: 'center', 
+                          gap: '10px',
+                          padding: '10px 16px',
+                          borderRadius: '10px',
+                          background: '#f0fdf4',
+                          color: '#059669',
+                          border: '2px solid #d1fae5',
+                          fontSize: '15px',
+                          fontWeight: 600
+                        }}
+                      >
                         <span>{selectedOrgName}</span>
                         <button
-                          onClick={() => setSelectedOrg('')}
-                          style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}
+                          onClick={() => {
+                            setSelectedOrg('');
+                            setSearchTerm('');
+                            // 전체 조직으로 돌아갈 때 기본 3년 범위로 복구
+                            setRange({ from: yearNow - 3, to: yearNow });
+                          }}
+                          style={{ 
+                            display: 'inline-flex', 
+                            alignItems: 'center', 
+                            cursor: 'pointer',
+                            background: 'transparent',
+                            border: 'none',
+                            padding: 0,
+                            color: '#059669'
+                          }}
                         >
-                          <X className="w-3 h-3" />
+                          <X style={{ width: '18px', height: '18px' }} />
                         </button>
                       </Badge>
                     </div>
@@ -333,203 +612,341 @@ export default function EmissionsDetail() {
                 </div>
 
                 {/* 기간 선택 */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#374151', marginBottom: '8px' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ 
+                    display: 'block', 
+                    fontSize: '16px', 
+                    fontWeight: 700, 
+                    color: '#111827', 
+                    marginBottom: '14px' 
+                  }}>
                     기간 선택
                   </label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <Button
-                      variant={quickRange === '1year' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => handleQuickRange('1year')}
-                      style={{ flex: 1, height: '40px' }}
-                    >
-                      <span>1년</span>
-                    </Button>
-                    <Button
-                      variant={quickRange === '3years' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => handleQuickRange('3years')}
-                      style={{ flex: 1, height: '40px' }}
-                    >
-                      <span>3년</span>
-                    </Button>
-                    <Button
-                      variant={quickRange === '5years' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => handleQuickRange('5years')}
-                      style={{ flex: 1, height: '40px' }}
-                    >
-                      <span>5년</span>
-                    </Button>
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                    <div style={{ flex: 1 }}>
+                      <Select 
+                        value={String(range.from)}
+                        onValueChange={(value) => {
+                          const newFrom = parseInt(value);
+                          setRange(prev => {
+                            // from이 to보다 크면 to도 조정
+                            if (newFrom > prev.to) {
+                              return { from: newFrom, to: newFrom };
+                            }
+                            return { ...prev, from: newFrom };
+                          });
+                        }}
+                      >
+                        <SelectTrigger style={{ height: '48px', borderRadius: '12px', fontSize: '15px' }}>
+                          <SelectValue>{range.from}년</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                          {availableYears.map(year => (
+                            <SelectItem key={year} value={String(year)}>
+                              {year}년
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <span style={{ color: '#6b7280', fontWeight: 500 }}>~</span>
+                    <div style={{ flex: 1 }}>
+                      <Select 
+                        value={String(range.to)}
+                        onValueChange={(value) => {
+                          const newTo = parseInt(value);
+                          setRange(prev => {
+                            // to가 from보다 작으면 from도 조정
+                            if (newTo < prev.from) {
+                              return { from: newTo, to: newTo };
+                            }
+                            return { ...prev, to: newTo };
+                          });
+                        }}
+                      >
+                        <SelectTrigger style={{ height: '48px', borderRadius: '12px', fontSize: '15px' }}>
+                          <SelectValue>{range.to}년</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                          {availableYears.map(year => (
+                            <SelectItem key={year} value={String(year)}>
+                              {year}년
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                </div>
-
-                {/* 시작 연도 */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#374151', marginBottom: '8px' }}>
-                    시작 연도
-                  </label>
-                  <select
-                    value={range.from}
-                    onChange={(e) => setRange(prev => ({ ...prev, from: Number(e.target.value) }))}
-                    style={{ width: '100%', height: '40px', padding: '0 12px', background: 'white', border: '1px solid #d1d5db', borderRadius: '8px' }}
-                  >
-                    {Array.from({ length: 10 }, (_, i) => yearNow - 9 + i).map(y => (
-                      <option key={y} value={y}>{y}년</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* 종료 연도 */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#374151', marginBottom: '8px' }}>
-                    종료 연도
-                  </label>
-                  <select
-                    value={range.to}
-                    onChange={(e) => setRange(prev => ({ ...prev, to: Number(e.target.value) }))}
-                    style={{ width: '100%', height: '40px', padding: '0 12px', background: 'white', border: '1px solid #d1d5db', borderRadius: '8px' }}
-                  >
-                    {Array.from({ length: 10 }, (_, i) => yearNow - 9 + i).map(y => (
-                      <option key={y} value={y}>{y}년</option>
-                    ))}
-                  </select>
                 </div>
               </div>
             </CardContent>
           </Card>
 
+          {/* 통계 카드들 */}
           {loadingEmissions ? (
-            <div style={{ textAlign: 'center', padding: '32px 0' }}>
+            <div style={{ textAlign: 'center', padding: '64px 0' }}>
               <Loader2 style={{ 
-                width: '32px', 
-                height: '32px', 
-                margin: '0 auto 8px auto', 
+                width: '48px', 
+                height: '48px', 
+                margin: '0 auto 16px auto', 
                 display: 'block',
                 animation: 'spin 1s linear infinite',
-                color: '#2563eb'
+                color: '#059669'
               }} />
-              <p style={{ fontSize: '14px', color: '#6b7280' }}>배출량 데이터 조회 중...</p>
+              <p style={{ fontSize: '16px', color: '#6b7280', fontWeight: 500 }}>배출량 데이터 조회 중...</p>
             </div>
           ) : (
-            <>
+            <React.Fragment>
               {/* 요약 통계 */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '24px' }}>
-                <Card className="rounded-2xl shadow-md border-0">
-                  <CardContent className="p-6">
-                    <div style={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', marginBottom: '16px' }}>
-                      <div style={{ padding: '12px', background: 'linear-gradient(to bottom right, #10b981, #059669)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
-                        <Activity className="w-6 h-6 text-white" />
+              <div style={{ 
+                display: 'flex',
+                gap: '24px',
+                width: '100%'
+              }}>
+                <Card style={{ 
+                  borderRadius: '20px', 
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.08)', 
+                  border: 'none',
+                  background: 'white',
+                  flex: 1
+                }}>
+                  <CardContent style={{ padding: '32px' }}>
+                    <div style={{ 
+                      display: 'flex', 
+                      alignItems: 'start', 
+                      justifyContent: 'space-between', 
+                      marginBottom: '16px' 
+                    }}>
+                      <div style={{ 
+                        padding: '16px', 
+                        background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', 
+                        borderRadius: '16px', 
+                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)' 
+                      }}>
+                        <Activity style={{ width: '28px', height: '28px', color: 'white' }} />
                       </div>
                       {totals.trend !== 0 && (
-                        <Badge variant={totals.trend < 0 ? "default" : "destructive"} className="rounded-full">
-                          {totals.trend < 0 ? <TrendingDown className="w-3 h-3 mr-1.5 inline-block" /> : <TrendingUp className="w-3 h-3 mr-1.5 inline-block" />}
+                        <Badge 
+                          variant={totals.trend < 0 ? "default" : "destructive"} 
+                          style={{ 
+                            borderRadius: '9999px',
+                            padding: '6px 12px',
+                            fontSize: '13px'
+                          }}
+                        >
+                          {totals.trend < 0 ? 
+                            <TrendingDown style={{ width: '14px', height: '14px', marginRight: '4px' }} /> : 
+                            <TrendingUp style={{ width: '14px', height: '14px', marginRight: '4px' }} />
+                          }
                           <span>{Math.abs(totals.trend)}%</span>
                         </Badge>
                       )}
                     </div>
-                    <div style={{ fontSize: '14px', fontWeight: 500, color: '#6b7280', marginBottom: '8px' }}>총 배출량</div>
-                    <div style={{ fontSize: '28px', fontWeight: 'bold' }}>{fmt.format(Math.round(totals.total))}</div>
-                    <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>tCO₂e</div>
+                    <div style={{ 
+                      fontSize: '16px', 
+                      fontWeight: 600, 
+                      color: '#6b7280', 
+                      marginBottom: '14px' 
+                    }}>총 배출량</div>
+                    <div style={{ 
+                      fontSize: '40px', 
+                      fontWeight: 'bold',
+                      color: '#111827',
+                      marginBottom: '10px'
+                    }}>{fmt.format(Math.round(totals.total))}</div>
+                    <div style={{ fontSize: '16px', color: '#6b7280' }}>tCO₂e</div>
                   </CardContent>
                 </Card>
 
-                <Card className="rounded-2xl shadow-md border-0">
-                  <CardContent className="p-6">
-                    <div style={{ padding: '12px', background: 'linear-gradient(to bottom right, #3b82f6, #2563eb)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', width: 'fit-content', marginBottom: '16px' }}>
-                      <BarChart3 className="w-6 h-6 text-white" />
+                <Card style={{ 
+                  borderRadius: '20px', 
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.08)', 
+                  border: 'none',
+                  background: 'white',
+                  flex: 1
+                }}>
+                  <CardContent style={{ padding: '32px' }}>
+                    <div style={{ 
+                      padding: '16px', 
+                      background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', 
+                      borderRadius: '16px', 
+                      boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
+                      width: 'fit-content',
+                      marginBottom: '16px'
+                    }}>
+                      <BarChart3 style={{ width: '28px', height: '28px', color: 'white' }} />
                     </div>
-                    <div style={{ fontSize: '14px', fontWeight: 500, color: '#6b7280', marginBottom: '8px' }}>데이터 수</div>
-                    <div style={{ fontSize: '28px', fontWeight: 'bold' }}>{filteredEmissions.length}</div>
-                    <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>개 기록</div>
+                    <div style={{ 
+                      fontSize: '16px', 
+                      fontWeight: 600, 
+                      color: '#6b7280', 
+                      marginBottom: '14px' 
+                    }}>데이터 수</div>
+                    <div style={{ 
+                      fontSize: '40px', 
+                      fontWeight: 'bold',
+                      color: '#111827',
+                      marginBottom: '10px'
+                    }}>{filteredEmissions.length}</div>
+                    <div style={{ fontSize: '16px', color: '#6b7280' }}>개 기록</div>
                   </CardContent>
                 </Card>
 
-                <Card className="rounded-2xl shadow-md border-0">
-                  <CardContent className="p-6">
-                    <div style={{ padding: '12px', background: 'linear-gradient(to bottom right, #8b5cf6, #7c3aed)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', width: 'fit-content', marginBottom: '16px' }}>
-                      <CheckCircle2 className="w-6 h-6 text-white" />
+                <Card style={{ 
+                  borderRadius: '20px', 
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.08)', 
+                  border: 'none',
+                  background: 'white',
+                  flex: 1
+                }}>
+                  <CardContent style={{ padding: '32px' }}>
+                    <div style={{ 
+                      padding: '16px', 
+                      background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)', 
+                      borderRadius: '16px', 
+                      boxShadow: '0 4px 12px rgba(139, 92, 246, 0.3)',
+                      width: 'fit-content',
+                      marginBottom: '16px'
+                    }}>
+                      <CheckCircle2 style={{ width: '28px', height: '28px', color: 'white' }} />
                     </div>
-                    <div style={{ fontSize: '14px', fontWeight: 500, color: '#6b7280', marginBottom: '8px' }}>검증 완료율</div>
-                    <div style={{ fontSize: '28px', fontWeight: 'bold' }}>{totals.rate}%</div>
-                    <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>
-                      {totals.verifiedCnt}/{filteredEmissions.length}개 검증
+                    <div style={{ 
+                      fontSize: '16px', 
+                      fontWeight: 600, 
+                      color: '#6b7280', 
+                      marginBottom: '14px' 
+                    }}>검증 완료율</div>
+                    <div style={{ 
+                      fontSize: '40px', 
+                      fontWeight: 'bold',
+                      color: '#111827',
+                      marginBottom: '10px'
+                    }}>{totals.rate}%</div>
+                    <div style={{ fontSize: '16px', color: '#6b7280' }}>
+                      {totals.verifiedCnt} / {filteredEmissions.length}개
                     </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="rounded-2xl shadow-md border-0">
-                  <CardContent className="p-6">
-                    <div style={{ padding: '12px', background: 'linear-gradient(to bottom right, #f97316, #ea580c)', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', width: 'fit-content', marginBottom: '16px' }}>
-                      <Factory className="w-6 h-6 text-white" />
-                    </div>
-                    <div style={{ fontSize: '14px', fontWeight: 500, color: '#6b7280', marginBottom: '8px' }}>참여 조직</div>
-                    <div style={{ fontSize: '28px', fontWeight: 'bold' }}>
-                      {new Set(filteredEmissions.map(e => e.organizationId)).size}
-                    </div>
-                    <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>개 조직</div>
                   </CardContent>
                 </Card>
               </div>
 
               {/* 차트 */}
-              <Card className="rounded-2xl shadow-md border-0">
-                <CardHeader>
-                  <CardTitle style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Calendar className="w-5 h-5 text-blue-600" />
-                    <span>연도별 배출량 추이</span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={byYear}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis dataKey="year" stroke="#6b7280" />
-                      <YAxis stroke="#6b7280" />
-                      <Tooltip 
-                        contentStyle={{ 
-                          backgroundColor: 'white', 
-                          border: '1px solid #e5e7eb',
-                          borderRadius: '8px'
-                        }}
-                      />
-                      <Legend />
-                      <Line 
-                        type="monotone" 
-                        dataKey="total" 
-                        stroke="#10b981" 
-                        strokeWidth={3}
-                        name="총 배출량" 
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
+              {byYear.length > 0 && (
+                <Card style={{ 
+                  borderRadius: '20px', 
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.08)', 
+                  border: 'none',
+                  background: 'white',
+                  width: '100%'
+                }}>
+                  <CardHeader style={{ padding: '28px 28px 0 28px' }}>
+                    <CardTitle style={{ fontSize: '24px', fontWeight: 'bold' }}>
+                      연도별 배출량 추이
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent style={{ padding: '28px' }}>
+                    <ResponsiveContainer width="100%" height={450}>
+                      <LineChart data={byYear}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                        <XAxis 
+                          dataKey="year" 
+                          stroke="#6b7280"
+                          style={{ fontSize: '15px', fontWeight: 500 }}
+                        />
+                        <YAxis 
+                          stroke="#6b7280"
+                          style={{ fontSize: '15px', fontWeight: 500 }}
+                        />
+                        <Tooltip 
+                          contentStyle={{ 
+                            borderRadius: '12px',
+                            border: '1px solid #e5e7eb',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                            fontSize: '15px',
+                            padding: '12px'
+                          }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: '15px', fontWeight: 500 }} />
+                        <Line 
+                          type="monotone" 
+                          dataKey="total" 
+                          stroke="#059669" 
+                          strokeWidth={4}
+                          name="총 배출량 (tCO₂e)" 
+                          dot={{ fill: '#059669', r: 7 }}
+                          activeDot={{ r: 9 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              )}
 
-              {/* 상세 데이터 테이블 */}
-              <Card className="rounded-2xl shadow-md border-0">
-                <CardHeader>
-                  <CardTitle style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Database className="w-5 h-5 text-gray-600" />
-                    <span>상세 배출량 데이터</span>
+              {/* 데이터 테이블 */}
+              <Card style={{ 
+                borderRadius: '20px', 
+                boxShadow: '0 4px 20px rgba(0,0,0,0.08)', 
+                border: 'none',
+                background: 'white',
+                width: '100%'
+              }}>
+                <CardHeader style={{ padding: '28px 28px 24px 28px' }}>
+                  <CardTitle style={{ fontSize: '24px', fontWeight: 'bold' }}>
+                    배출량 상세 데이터
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent style={{ padding: '0 28px 28px 28px' }}>
                   {filteredEmissions.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '48px 0', color: '#6b7280' }}>
-                      <AlertCircle style={{ width: '48px', height: '48px', margin: '0 auto 16px auto', color: '#9ca3af' }} />
-                      선택한 기간에 배출량 데이터가 없습니다.
+                    <div style={{ 
+                      textAlign: 'center', 
+                      padding: '64px 0', 
+                      color: '#6b7280' 
+                    }}>
+                      <AlertCircle style={{ 
+                        width: '56px', 
+                        height: '56px', 
+                        margin: '0 auto 20px auto', 
+                        color: '#9ca3af' 
+                      }} />
+                      <p style={{ fontSize: '16px', fontWeight: 500 }}>
+                        선택한 기간에 배출량 데이터가 없습니다.
+                      </p>
                     </div>
                   ) : (
-                    <div style={{ overflowX: 'auto' }}>
+                    <div style={{ overflowX: 'auto', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
                       <table style={{ width: '100%' }}>
                         <thead>
-                          <tr style={{ borderBottom: '2px solid #e5e7eb', background: '#f9fafb' }}>
-                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '14px', fontWeight: 600, color: '#374151' }}>조직명</th>
-                            <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', fontWeight: 600, color: '#374151' }}>연도</th>
-                            <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: '14px', fontWeight: 600, color: '#374151' }}>총배출량</th>
-                            <th style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', fontWeight: 600, color: '#374151' }}>검증상태</th>
+                          <tr style={{ 
+                            borderBottom: '2px solid #e5e7eb', 
+                            background: '#f9fafb' 
+                          }}>
+                            <th style={{ 
+                              padding: '18px 24px', 
+                              textAlign: 'left', 
+                              fontSize: '15px', 
+                              fontWeight: 700, 
+                              color: '#374151' 
+                            }}>조직명</th>
+                            <th style={{ 
+                              padding: '18px 24px', 
+                              textAlign: 'center', 
+                              fontSize: '15px', 
+                              fontWeight: 700, 
+                              color: '#374151' 
+                            }}>연도</th>
+                            <th style={{ 
+                              padding: '18px 24px', 
+                              textAlign: 'right', 
+                              fontSize: '15px', 
+                              fontWeight: 700, 
+                              color: '#374151' 
+                            }}>총배출량</th>
+                            <th style={{ 
+                              padding: '18px 24px', 
+                              textAlign: 'center', 
+                              fontSize: '15px', 
+                              fontWeight: 700, 
+                              color: '#374151' 
+                            }}>검증상태</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -541,57 +958,55 @@ export default function EmissionsDetail() {
                                 background: idx % 2 === 0 ? 'white' : '#f9fafb',
                                 transition: 'background 0.2s'
                               }}
-                              onMouseEnter={(e) => e.currentTarget.style.background = '#f3f4f6'}
+                              onMouseEnter={(e) => e.currentTarget.style.background = '#f0fdf4'}
                               onMouseLeave={(e) => e.currentTarget.style.background = idx % 2 === 0 ? 'white' : '#f9fafb'}
                             >
-                              <td style={{ padding: '12px 16px', fontSize: '14px', fontWeight: 500, color: '#111827' }}>
-                                <div style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {emission.organizationName}
-                                </div>
-                              </td>
-                              <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', color: '#374151' }}>
-                                {emission.year}
-                              </td>
-                              <td style={{ padding: '12px 16px', textAlign: 'right', fontSize: '14px', fontWeight: 600, color: '#111827' }}>
-                                {fmt.format(Math.round(Number(emission.totalEmissions) || 0))}
-                              </td>
-                              <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                              <td style={{ 
+                                padding: '18px 24px', 
+                                fontWeight: 500, 
+                                color: '#111827',
+                                fontSize: '15px'
+                              }}>{emission.organizationName}</td>
+                              <td style={{ 
+                                padding: '18px 24px', 
+                                textAlign: 'center', 
+                                color: '#6b7280',
+                                fontSize: '15px'
+                              }}>{emission.year}</td>
+                              <td style={{ 
+                                padding: '18px 24px', 
+                                textAlign: 'right', 
+                                fontWeight: 600, 
+                                color: '#111827',
+                                fontSize: '15px'
+                              }}>{fmt.format(Math.round(emission.totalEmissions))}</td>
+                              <td style={{ 
+                                padding: '18px 24px', 
+                                textAlign: 'center' 
+                              }}>
                                 <Badge 
                                   variant={emission.verificationStatus === '검증완료' ? 'default' : 'secondary'}
-                                  className="rounded-full"
+                                  style={{ 
+                                    borderRadius: '8px',
+                                    padding: '4px 12px',
+                                    fontSize: '13px'
+                                  }}
                                 >
-                                  {emission.verificationStatus === '검증완료' ? (
-                                    <CheckCircle2 className="w-3 h-3 mr-1.5 inline-block" />
-                                  ) : (
-                                    <AlertCircle className="w-3 h-3 mr-1.5 inline-block" />
-                                  )}
-                                  <span>{emission.verificationStatus}</span>
+                                  {emission.verificationStatus}
                                 </Badge>
                               </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
-                      {filteredEmissions.length > 50 && (
-                        <div style={{ marginTop: '16px', textAlign: 'center', fontSize: '14px', color: '#6b7280' }}>
-                          상위 50개 항목만 표시됩니다. 전체 데이터를 보려면 CSV를 다운로드하세요.
-                        </div>
-                      )}
                     </div>
                   )}
                 </CardContent>
               </Card>
-            </>
+            </React.Fragment>
           )}
         </div>
       </main>
-
-      <style>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 }
