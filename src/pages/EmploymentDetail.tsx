@@ -4,14 +4,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   ArrowLeft,
-  DollarSign,
+  Users,
   TrendingUp,
   Database,
   AlertCircle,
   Calendar,
   Building2,
-  CheckCircle2,
-  XCircle,
+  UserCheck,
+  UserPlus,
+  UserMinus,
 } from "lucide-react";
 import {
   LineChart,
@@ -36,6 +37,8 @@ const COLORS = {
   success: "#10B981",
   warning: "#F59E0B",
   error: "#EF4444",
+  purple: "#8B5CF6",
+  pink: "#EC4899",
   border: "#E2E8F0",
   cardBg: "#FFFFFF",
   chartColors: [
@@ -48,8 +51,8 @@ const COLORS = {
   ],
 };
 
-export default function DonationsDetail() {
-  const [donations, setDonations] = useState([]);
+export default function EmploymentDetail() {
+  const [employments, setEmployments] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isApiConnected, setIsApiConnected] = useState(false);
   const [selectedYear, setSelectedYear] = useState("all");
@@ -61,26 +64,23 @@ export default function DonationsDetail() {
       try {
         setIsLoading(true);
 
-        // 기부금 데이터 조회
-        const response = await fetch("http://localhost:8080/api/donations");
+        const response = await fetch("http://localhost:8080/api/employments");
         if (!response.ok) throw new Error("API connection failed");
 
         const data = await response.json();
-        setDonations(data);
+        setEmployments(data);
         setIsApiConnected(true);
 
-        // 연도 목록 조회
         const yearsResponse = await fetch(
-          "http://localhost:8080/api/donations/years"
+          "http://localhost:8080/api/employments/years"
         );
         const years = await yearsResponse.json();
         setAvailableYears(years.sort((a, b) => b - a));
       } catch (error) {
         console.error("API Error:", error);
         setIsApiConnected(false);
-        // Mock 데이터 사용
         const mockData = generateMockData();
-        setDonations(mockData);
+        setEmployments(mockData);
         setAvailableYears([2024, 2023, 2022, 2021]);
       } finally {
         setIsLoading(false);
@@ -107,130 +107,148 @@ export default function DonationsDetail() {
     const data = [];
 
     for (let year = 2021; year <= 2024; year++) {
-      for (let quarter = 1; quarter <= 4; quarter++) {
-        companies.forEach((company, idx) => {
-          data.push({
-            id: data.length + 1,
-            organizationName: company,
-            stockCode: `00${idx}000`,
-            year: year,
-            quarter: quarter,
-            donationAmount:
-              Math.floor(Math.random() * 50000000000) + 1000000000,
-            currency: "KRW",
-            reportType: `${quarter}분기보고서`,
-            verificationStatus: Math.random() > 0.3 ? "자동수집" : "검증완료",
-            dataSource: "DART_AUTO",
-          });
+      companies.forEach((company, idx) => {
+        const total = Math.floor(Math.random() * 50000) + 10000;
+        const female = Math.floor(total * (0.25 + Math.random() * 0.15));
+        const male = total - female;
+        const regular = Math.floor(total * (0.85 + Math.random() * 0.1));
+        const newHires = Math.floor(total * 0.1);
+        const resigned = Math.floor(total * 0.08);
+
+        data.push({
+          id: data.length + 1,
+          organizationName: company,
+          stockCode: `00${idx}000`,
+          year: year,
+          totalEmployees: total,
+          maleEmployees: male,
+          femaleEmployees: female,
+          regularEmployees: regular,
+          contractEmployees: total - regular,
+          averageServiceYears: 5 + Math.random() * 10,
+          newHires: newHires,
+          resigned: resigned,
+          turnoverRate: (resigned / total) * 100,
+          verificationStatus: "자동수집",
+          dataSource: "DART_API",
         });
-      }
+      });
     }
 
     return data;
   };
 
   // 필터링된 데이터
-  const filteredDonations = useMemo(() => {
-    if (selectedYear === "all") return donations;
-    return donations.filter((d) => d.year === parseInt(selectedYear));
-  }, [donations, selectedYear]);
+  const filteredEmployments = useMemo(() => {
+    if (selectedYear === "all") return employments;
+    return employments.filter((e) => e.year === parseInt(selectedYear));
+  }, [employments, selectedYear]);
 
   // 통계 계산
   const statistics = useMemo(() => {
-    const total = filteredDonations.reduce((sum, d) => {
-      const amount =
-        typeof d.donationAmount === "number"
-          ? d.donationAmount
-          : Number(d.donationAmount || 0);
-      return sum + amount;
-    }, 0);
+    if (filteredEmployments.length === 0) {
+      return {
+        totalEmployees: 0,
+        avgFemaleRatio: 0,
+        avgRegularRatio: 0,
+        avgServiceYears: 0,
+        totalNewHires: 0,
+        avgTurnoverRate: 0,
+      };
+    }
 
-    const avgPerCompany =
-      filteredDonations.length > 0
-        ? total / new Set(filteredDonations.map((d) => d.organizationName)).size
-        : 0;
+    const total = filteredEmployments.reduce(
+      (sum, e) => sum + (e.totalEmployees || 0),
+      0
+    );
+    const totalFemale = filteredEmployments.reduce(
+      (sum, e) => sum + (e.femaleEmployees || 0),
+      0
+    );
+    const totalRegular = filteredEmployments.reduce(
+      (sum, e) => sum + (e.regularEmployees || 0),
+      0
+    );
+    const totalNewHires = filteredEmployments.reduce(
+      (sum, e) => sum + (e.newHires || 0),
+      0
+    );
 
-    const topDonor = [...filteredDonations].sort((a, b) => {
-      const amountA =
-        typeof a.donationAmount === "number"
-          ? a.donationAmount
-          : Number(a.donationAmount || 0);
-      const amountB =
-        typeof b.donationAmount === "number"
-          ? b.donationAmount
-          : Number(b.donationAmount || 0);
-      return amountB - amountA;
-    })[0];
+    const avgServiceYears =
+      filteredEmployments.reduce(
+        (sum, e) => sum + (e.averageServiceYears || 0),
+        0
+      ) / filteredEmployments.length;
+    const avgTurnoverRate =
+      filteredEmployments.reduce((sum, e) => sum + (e.turnoverRate || 0), 0) /
+      filteredEmployments.length;
 
     return {
-      total,
-      count: filteredDonations.length,
-      avgPerCompany,
-      topDonor: topDonor ? topDonor.organizationName : "-",
-      topAmount: topDonor
-        ? typeof topDonor.donationAmount === "number"
-          ? topDonor.donationAmount
-          : Number(topDonor.donationAmount || 0)
-        : 0,
+      totalEmployees: total,
+      avgFemaleRatio: total > 0 ? (totalFemale / total) * 100 : 0,
+      avgRegularRatio: total > 0 ? (totalRegular / total) * 100 : 0,
+      avgServiceYears: avgServiceYears,
+      totalNewHires: totalNewHires,
+      avgTurnoverRate: avgTurnoverRate,
     };
-  }, [filteredDonations]);
+  }, [filteredEmployments]);
 
   // 연도별 트렌드 데이터
   const trendData = useMemo(() => {
-    const yearlyData: Record<number, number> = {};
+    const yearlyData = {};
 
-    donations.forEach((d) => {
-      if (!yearlyData[d.year]) {
-        yearlyData[d.year] = 0;
+    employments.forEach((e) => {
+      if (!yearlyData[e.year]) {
+        yearlyData[e.year] = {
+          year: e.year,
+          total: 0,
+          female: 0,
+          newHires: 0,
+        };
       }
-      const amount =
-        typeof d.donationAmount === "number"
-          ? d.donationAmount
-          : Number(d.donationAmount || 0);
-      yearlyData[d.year] += amount;
+      yearlyData[e.year].total += e.totalEmployees || 0;
+      yearlyData[e.year].female += e.femaleEmployees || 0;
+      yearlyData[e.year].newHires += e.newHires || 0;
     });
 
-    return Object.keys(yearlyData)
-      .sort()
-      .map((year) => ({
-        year: year,
-        total: Math.round(yearlyData[Number(year)] / 100000000) / 10, // 억원 단위
+    return Object.values(yearlyData)
+      .sort((a, b) => a.year - b.year)
+      .map((d) => ({
+        year: d.year,
+        total: Math.round(d.total / 1000), // 천명 단위
+        femaleRatio: d.total > 0 ? ((d.female / d.total) * 100).toFixed(1) : 0,
+        newHires: Math.round(d.newHires / 100), // 백명 단위
       }));
-  }, [donations]);
+  }, [employments]);
 
-  // 상위 10개 기업 데이터
-  const topCompanies = useMemo(() => {
-    const companyTotals: Record<string, number> = {};
+  // 상위 10개 고용 기업
+  const topEmployers = useMemo(() => {
+    const companyTotals = {};
 
-    filteredDonations.forEach((d) => {
-      if (!companyTotals[d.organizationName]) {
-        companyTotals[d.organizationName] = 0;
+    filteredEmployments.forEach((e) => {
+      if (!companyTotals[e.organizationName]) {
+        companyTotals[e.organizationName] = {
+          name: e.organizationName,
+          total: 0,
+          female: 0,
+        };
       }
-      const amount =
-        typeof d.donationAmount === "number"
-          ? d.donationAmount
-          : Number(d.donationAmount || 0);
-      companyTotals[d.organizationName] += amount;
+      companyTotals[e.organizationName].total += e.totalEmployees || 0;
+      companyTotals[e.organizationName].female += e.femaleEmployees || 0;
     });
 
-    return Object.entries(companyTotals)
-      .map(([name, amount]) => ({ name, amount }))
-      .sort((a, b) => b.amount - a.amount)
-      .slice(0, 10);
-  }, [filteredDonations]);
+    return Object.values(companyTotals)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10)
+      .map((c) => ({
+        ...c,
+        femaleRatio: c.total > 0 ? ((c.female / c.total) * 100).toFixed(1) : 0,
+      }));
+  }, [filteredEmployments]);
 
   // 숫자 포맷팅
   const formatNumber = (num) => {
     return new Intl.NumberFormat("ko-KR").format(Math.round(num));
-  };
-
-  const formatAmount = (amount) => {
-    if (amount >= 100000000) {
-      return `${formatNumber(Math.round(amount / 100000000))}억원`;
-    } else if (amount >= 10000) {
-      return `${formatNumber(Math.round(amount / 10000))}만원`;
-    }
-    return `${formatNumber(amount)}원`;
   };
 
   const navigate = (path) => {
@@ -323,11 +341,11 @@ export default function DonationsDetail() {
               <div
                 style={{
                   padding: "8px",
-                  background: COLORS.accent,
+                  background: COLORS.purple,
                   borderRadius: "10px",
                 }}
               >
-                <DollarSign
+                <Users
                   style={{ width: "20px", height: "20px", color: "white" }}
                 />
               </div>
@@ -341,7 +359,7 @@ export default function DonationsDetail() {
                     letterSpacing: "-0.3px",
                   }}
                 >
-                  기부금 분석
+                  고용 현황 분석
                 </h1>
                 <p
                   style={{
@@ -350,7 +368,7 @@ export default function DonationsDetail() {
                     fontWeight: 500,
                   }}
                 >
-                  기업별 기부금 현황 추적 및 분석 (단위: 원)
+                  기업별 고용 현황 및 일자리 창출 분석 (단위: 명)
                 </p>
               </div>
             </div>
@@ -398,7 +416,7 @@ export default function DonationsDetail() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
               gap: "16px",
             }}
           >
@@ -424,7 +442,7 @@ export default function DonationsDetail() {
                     style={{
                       width: "18px",
                       height: "18px",
-                      color: COLORS.accent,
+                      color: COLORS.purple,
                     }}
                   />
                   <span
@@ -462,7 +480,7 @@ export default function DonationsDetail() {
               </CardContent>
             </Card>
 
-            {/* 총 기부금 */}
+            {/* 총 고용 인원 */}
             <Card
               style={{
                 borderRadius: "12px",
@@ -480,11 +498,11 @@ export default function DonationsDetail() {
                     marginBottom: "8px",
                   }}
                 >
-                  <DollarSign
+                  <Users
                     style={{
                       width: "18px",
                       height: "18px",
-                      color: COLORS.accent,
+                      color: COLORS.purple,
                     }}
                   />
                   <span
@@ -494,7 +512,7 @@ export default function DonationsDetail() {
                       color: COLORS.secondary,
                     }}
                   >
-                    총 기부금
+                    총 고용 인원
                   </span>
                 </div>
                 <div
@@ -504,7 +522,7 @@ export default function DonationsDetail() {
                     color: COLORS.primary,
                   }}
                 >
-                  {formatAmount(statistics.total)}
+                  {formatNumber(statistics.totalEmployees)}명
                 </div>
                 <p
                   style={{
@@ -513,12 +531,12 @@ export default function DonationsDetail() {
                     marginTop: "4px",
                   }}
                 >
-                  {statistics.count}건의 기록
+                  {filteredEmployments.length}개 기업
                 </p>
               </CardContent>
             </Card>
 
-            {/* 평균 기부금 */}
+            {/* 여성 고용 비율 */}
             <Card
               style={{
                 borderRadius: "12px",
@@ -536,11 +554,11 @@ export default function DonationsDetail() {
                     marginBottom: "8px",
                   }}
                 >
-                  <TrendingUp
+                  <UserCheck
                     style={{
                       width: "18px",
                       height: "18px",
-                      color: COLORS.success,
+                      color: COLORS.pink,
                     }}
                   />
                   <span
@@ -550,7 +568,7 @@ export default function DonationsDetail() {
                       color: COLORS.secondary,
                     }}
                   >
-                    기업당 평균
+                    여성 고용 비율
                   </span>
                 </div>
                 <div
@@ -560,7 +578,7 @@ export default function DonationsDetail() {
                     color: COLORS.primary,
                   }}
                 >
-                  {formatAmount(statistics.avgPerCompany)}
+                  {statistics.avgFemaleRatio.toFixed(1)}%
                 </div>
                 <p
                   style={{
@@ -569,12 +587,12 @@ export default function DonationsDetail() {
                     marginTop: "4px",
                   }}
                 >
-                  기업별 평균 기부금액
+                  성 평등 지표
                 </p>
               </CardContent>
             </Card>
 
-            {/* 최다 기부 기업 */}
+            {/* 정규직 비율 */}
             <Card
               style={{
                 borderRadius: "12px",
@@ -596,6 +614,174 @@ export default function DonationsDetail() {
                     style={{
                       width: "18px",
                       height: "18px",
+                      color: COLORS.success,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      color: COLORS.secondary,
+                    }}
+                  >
+                    정규직 비율
+                  </span>
+                </div>
+                <div
+                  style={{
+                    fontSize: "24px",
+                    fontWeight: 700,
+                    color: COLORS.primary,
+                  }}
+                >
+                  {statistics.avgRegularRatio.toFixed(1)}%
+                </div>
+                <p
+                  style={{
+                    fontSize: "12px",
+                    color: COLORS.secondary,
+                    marginTop: "4px",
+                  }}
+                >
+                  고용 안정성
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* 평균 근속연수 */}
+            <Card
+              style={{
+                borderRadius: "12px",
+                boxShadow: "0 1px 3px rgba(15, 23, 42, 0.08)",
+                border: `1px solid ${COLORS.border}`,
+                background: COLORS.cardBg,
+              }}
+            >
+              <CardContent style={{ padding: "20px" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    marginBottom: "8px",
+                  }}
+                >
+                  <TrendingUp
+                    style={{
+                      width: "18px",
+                      height: "18px",
+                      color: COLORS.accent,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      color: COLORS.secondary,
+                    }}
+                  >
+                    평균 근속연수
+                  </span>
+                </div>
+                <div
+                  style={{
+                    fontSize: "24px",
+                    fontWeight: 700,
+                    color: COLORS.primary,
+                  }}
+                >
+                  {statistics.avgServiceYears.toFixed(1)}년
+                </div>
+                <p
+                  style={{
+                    fontSize: "12px",
+                    color: COLORS.secondary,
+                    marginTop: "4px",
+                  }}
+                >
+                  재직 기간
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* 신규 채용 */}
+            <Card
+              style={{
+                borderRadius: "12px",
+                boxShadow: "0 1px 3px rgba(15, 23, 42, 0.08)",
+                border: `1px solid ${COLORS.border}`,
+                background: COLORS.cardBg,
+              }}
+            >
+              <CardContent style={{ padding: "20px" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    marginBottom: "8px",
+                  }}
+                >
+                  <UserPlus
+                    style={{
+                      width: "18px",
+                      height: "18px",
+                      color: COLORS.success,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      color: COLORS.secondary,
+                    }}
+                  >
+                    신규 채용
+                  </span>
+                </div>
+                <div
+                  style={{
+                    fontSize: "24px",
+                    fontWeight: 700,
+                    color: COLORS.primary,
+                  }}
+                >
+                  {formatNumber(statistics.totalNewHires)}명
+                </div>
+                <p
+                  style={{
+                    fontSize: "12px",
+                    color: COLORS.secondary,
+                    marginTop: "4px",
+                  }}
+                >
+                  일자리 창출
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* 평균 이직률 */}
+            <Card
+              style={{
+                borderRadius: "12px",
+                boxShadow: "0 1px 3px rgba(15, 23, 42, 0.08)",
+                border: `1px solid ${COLORS.border}`,
+                background: COLORS.cardBg,
+              }}
+            >
+              <CardContent style={{ padding: "20px" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    marginBottom: "8px",
+                  }}
+                >
+                  <UserMinus
+                    style={{
+                      width: "18px",
+                      height: "18px",
                       color: COLORS.warning,
                     }}
                   />
@@ -606,21 +792,26 @@ export default function DonationsDetail() {
                       color: COLORS.secondary,
                     }}
                   >
-                    최다 기부 기업
+                    평균 이직률
                   </span>
                 </div>
                 <div
                   style={{
-                    fontSize: "18px",
+                    fontSize: "24px",
                     fontWeight: 700,
                     color: COLORS.primary,
-                    marginBottom: "4px",
                   }}
                 >
-                  {statistics.topDonor}
+                  {statistics.avgTurnoverRate.toFixed(1)}%
                 </div>
-                <p style={{ fontSize: "12px", color: COLORS.secondary }}>
-                  {formatAmount(statistics.topAmount)}
+                <p
+                  style={{
+                    fontSize: "12px",
+                    color: COLORS.secondary,
+                    marginTop: "4px",
+                  }}
+                >
+                  퇴직률 지표
                 </p>
               </CardContent>
             </Card>
@@ -644,7 +835,7 @@ export default function DonationsDetail() {
                     color: COLORS.primary,
                   }}
                 >
-                  연도별 기부금 트렌드
+                  연도별 고용 트렌드
                 </CardTitle>
                 <p
                   style={{
@@ -653,7 +844,7 @@ export default function DonationsDetail() {
                     marginTop: "4px",
                   }}
                 >
-                  시계열 분석 (단위: 억원)
+                  시계열 분석 (단위: 천명)
                 </p>
               </CardHeader>
               <CardContent style={{ padding: "0 20px 20px 20px" }}>
@@ -687,10 +878,19 @@ export default function DonationsDetail() {
                     <Line
                       type="monotone"
                       dataKey="total"
-                      stroke={COLORS.accent}
+                      stroke={COLORS.purple}
                       strokeWidth={3}
-                      name="총 기부금 (억원)"
-                      dot={{ fill: COLORS.accent, r: 5 }}
+                      name="총 고용 인원 (천명)"
+                      dot={{ fill: COLORS.purple, r: 5 }}
+                      activeDot={{ r: 7 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="newHires"
+                      stroke={COLORS.success}
+                      strokeWidth={3}
+                      name="신규 채용 (백명)"
+                      dot={{ fill: COLORS.success, r: 5 }}
                       activeDot={{ r: 7 }}
                     />
                   </LineChart>
@@ -699,8 +899,8 @@ export default function DonationsDetail() {
             </Card>
           )}
 
-          {/* 상위 10개 기업 */}
-          {topCompanies.length > 0 && (
+          {/* 상위 10개 고용 기업 */}
+          {topEmployers.length > 0 && (
             <Card
               style={{
                 borderRadius: "12px",
@@ -717,7 +917,7 @@ export default function DonationsDetail() {
                     color: COLORS.primary,
                   }}
                 >
-                  상위 10개 기업
+                  상위 10개 고용 기업
                 </CardTitle>
                 <p
                   style={{
@@ -726,7 +926,7 @@ export default function DonationsDetail() {
                     marginTop: "4px",
                   }}
                 >
-                  기부금액 기준 순위
+                  고용 인원 기준 순위
                 </p>
               </CardHeader>
               <CardContent style={{ padding: "0 20px 20px 20px" }}>
@@ -737,7 +937,7 @@ export default function DonationsDetail() {
                     gap: "12px",
                   }}
                 >
-                  {topCompanies.map((company, idx) => (
+                  {topEmployers.map((company, idx) => (
                     <div
                       key={company.name}
                       style={{
@@ -790,7 +990,8 @@ export default function DonationsDetail() {
                             marginTop: "2px",
                           }}
                         >
-                          {formatAmount(company.amount)}
+                          {formatNumber(company.total)}명 · 여성{" "}
+                          {company.femaleRatio}%
                         </div>
                       </div>
                       <div
@@ -804,9 +1005,9 @@ export default function DonationsDetail() {
                         <div
                           style={{
                             width: `${
-                              (company.amount / topCompanies[0].amount) * 100
+                              (company.total / topEmployers[0].total) * 100
                             }%`,
-                            background: COLORS.accent,
+                            background: COLORS.purple,
                             height: "100%",
                             borderRadius: "9999px",
                             transition: "width 0.3s",
@@ -838,11 +1039,11 @@ export default function DonationsDetail() {
                   color: COLORS.primary,
                 }}
               >
-                기부금 상세 데이터
+                고용 현황 상세 데이터
               </CardTitle>
             </CardHeader>
             <CardContent style={{ padding: "0 20px 20px 20px" }}>
-              {filteredDonations.length === 0 ? (
+              {filteredEmployments.length === 0 ? (
                 <div
                   style={{
                     textAlign: "center",
@@ -859,7 +1060,7 @@ export default function DonationsDetail() {
                     }}
                   />
                   <p style={{ fontSize: "14px", fontWeight: 600 }}>
-                    선택한 기간에 기부금 데이터가 없습니다.
+                    선택한 기간에 고용 현황 데이터가 없습니다.
                   </p>
                 </div>
               ) : (
@@ -903,13 +1104,13 @@ export default function DonationsDetail() {
                         <th
                           style={{
                             padding: "14px 18px",
-                            textAlign: "center",
+                            textAlign: "right",
                             fontSize: "13px",
                             fontWeight: 700,
                             color: COLORS.primary,
                           }}
                         >
-                          분기
+                          총 인원
                         </th>
                         <th
                           style={{
@@ -920,7 +1121,29 @@ export default function DonationsDetail() {
                             color: COLORS.primary,
                           }}
                         >
-                          기부금액
+                          여성 비율
+                        </th>
+                        <th
+                          style={{
+                            padding: "14px 18px",
+                            textAlign: "right",
+                            fontSize: "13px",
+                            fontWeight: 700,
+                            color: COLORS.primary,
+                          }}
+                        >
+                          정규직 비율
+                        </th>
+                        <th
+                          style={{
+                            padding: "14px 18px",
+                            textAlign: "right",
+                            fontSize: "13px",
+                            fontWeight: 700,
+                            color: COLORS.primary,
+                          }}
+                        >
+                          평균 근속
                         </th>
                         <th
                           style={{
@@ -936,110 +1159,145 @@ export default function DonationsDetail() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredDonations.slice(0, 50).map((donation, idx) => (
-                        <tr
-                          key={donation.id}
-                          style={{
-                            borderBottom: `1px solid ${COLORS.border}`,
-                            background: idx % 2 === 0 ? "white" : "#FAFAFA",
-                            transition: "background 0.2s",
-                          }}
-                          onMouseEnter={(e) =>
-                            (e.currentTarget.style.background = "#F1F5F9")
-                          }
-                          onMouseLeave={(e) =>
-                            (e.currentTarget.style.background =
-                              idx % 2 === 0 ? "white" : "#FAFAFA")
-                          }
-                        >
-                          <td
-                            style={{
-                              padding: "14px 18px",
-                              fontSize: "13px",
-                              fontWeight: 600,
-                              color: COLORS.primary,
-                            }}
-                          >
-                            {donation.organizationName}
-                          </td>
-                          <td
-                            style={{
-                              padding: "14px 18px",
-                              textAlign: "center",
-                              fontSize: "13px",
-                              color: COLORS.secondary,
-                            }}
-                          >
-                            {donation.year}
-                          </td>
-                          <td
-                            style={{
-                              padding: "14px 18px",
-                              textAlign: "center",
-                              fontSize: "13px",
-                              color: COLORS.secondary,
-                            }}
-                          >
-                            Q{donation.quarter}
-                          </td>
-                          <td
-                            style={{
-                              padding: "14px 18px",
-                              textAlign: "right",
-                              fontSize: "13px",
-                              fontWeight: 600,
-                              color: COLORS.primary,
-                            }}
-                          >
-                            {formatAmount(
-                              typeof donation.donationAmount === "number"
-                                ? donation.donationAmount
-                                : Number(donation.donationAmount || 0)
-                            )}
-                          </td>
-                          <td
-                            style={{
-                              padding: "14px 18px",
-                              textAlign: "center",
-                            }}
-                          >
-                            <Badge
-                              variant={
-                                donation.verificationStatus === "검증완료"
-                                  ? "default"
-                                  : "secondary"
-                              }
+                      {filteredEmployments
+                        .slice(0, 50)
+                        .map((employment, idx) => {
+                          const femaleRatio =
+                            employment.totalEmployees > 0
+                              ? (
+                                  (employment.femaleEmployees /
+                                    employment.totalEmployees) *
+                                  100
+                                ).toFixed(1)
+                              : "0.0";
+                          const regularRatio =
+                            employment.totalEmployees > 0
+                              ? (
+                                  (employment.regularEmployees /
+                                    employment.totalEmployees) *
+                                  100
+                                ).toFixed(1)
+                              : "0.0";
+
+                          return (
+                            <tr
+                              key={employment.id}
                               style={{
-                                borderRadius: "6px",
-                                padding: "4px 10px",
-                                fontSize: "11px",
-                                fontWeight: 600,
-                                background:
-                                  donation.verificationStatus === "검증완료"
-                                    ? COLORS.success
-                                    : COLORS.secondary,
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: "4px",
+                                borderBottom: `1px solid ${COLORS.border}`,
+                                background: idx % 2 === 0 ? "white" : "#FAFAFA",
+                                transition: "background 0.2s",
                               }}
+                              onMouseEnter={(e) =>
+                                (e.currentTarget.style.background = "#F1F5F9")
+                              }
+                              onMouseLeave={(e) =>
+                                (e.currentTarget.style.background =
+                                  idx % 2 === 0 ? "white" : "#FAFAFA")
+                              }
                             >
-                              {donation.verificationStatus === "검증완료" ? (
-                                <CheckCircle2
-                                  style={{ width: "12px", height: "12px" }}
-                                />
-                              ) : (
-                                <Database
-                                  style={{ width: "12px", height: "12px" }}
-                                />
-                              )}
-                              {donation.verificationStatus}
-                            </Badge>
-                          </td>
-                        </tr>
-                      ))}
+                              <td
+                                style={{
+                                  padding: "14px 18px",
+                                  fontSize: "13px",
+                                  fontWeight: 600,
+                                  color: COLORS.primary,
+                                }}
+                              >
+                                {employment.organizationName}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "14px 18px",
+                                  textAlign: "center",
+                                  fontSize: "13px",
+                                  color: COLORS.secondary,
+                                }}
+                              >
+                                {employment.year}
+                              </td>
+                              <td
+                                style={{
+                                  padding: "14px 18px",
+                                  textAlign: "right",
+                                  fontSize: "13px",
+                                  fontWeight: 600,
+                                  color: COLORS.primary,
+                                }}
+                              >
+                                {formatNumber(employment.totalEmployees)}명
+                              </td>
+                              <td
+                                style={{
+                                  padding: "14px 18px",
+                                  textAlign: "right",
+                                  fontSize: "13px",
+                                  color: COLORS.secondary,
+                                }}
+                              >
+                                {femaleRatio}%
+                              </td>
+                              <td
+                                style={{
+                                  padding: "14px 18px",
+                                  textAlign: "right",
+                                  fontSize: "13px",
+                                  color: COLORS.secondary,
+                                }}
+                              >
+                                {regularRatio}%
+                              </td>
+                              <td
+                                style={{
+                                  padding: "14px 18px",
+                                  textAlign: "right",
+                                  fontSize: "13px",
+                                  color: COLORS.secondary,
+                                }}
+                              >
+                                {employment.averageServiceYears
+                                  ? employment.averageServiceYears.toFixed(1)
+                                  : "-"}
+                                년
+                              </td>
+                              <td
+                                style={{
+                                  padding: "14px 18px",
+                                  textAlign: "center",
+                                }}
+                              >
+                                <Badge
+                                  variant={
+                                    employment.verificationStatus === "검증완료"
+                                      ? "default"
+                                      : "secondary"
+                                  }
+                                  style={{
+                                    borderRadius: "6px",
+                                    padding: "4px 10px",
+                                    fontSize: "11px",
+                                    fontWeight: 600,
+                                    background:
+                                      employment.verificationStatus ===
+                                      "검증완료"
+                                        ? COLORS.success
+                                        : COLORS.secondary,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "4px",
+                                  }}
+                                >
+                                  <Database
+                                    style={{ width: "12px", height: "12px" }}
+                                  />
+                                  {employment.verificationStatus}
+                                </Badge>
+                              </td>
+                            </tr>
+                          );
+                        })}
                     </tbody>
                   </table>
-                  {filteredDonations.length > 50 && (
+                  {filteredEmployments.length > 50 && (
                     <div
                       style={{
                         padding: "16px",
@@ -1050,8 +1308,8 @@ export default function DonationsDetail() {
                         color: COLORS.secondary,
                       }}
                     >
-                      상위 50개 항목만 표시됩니다. 총 {filteredDonations.length}
-                      개 항목
+                      상위 50개 항목만 표시됩니다. 총{" "}
+                      {filteredEmployments.length}개 항목
                     </div>
                   )}
                 </div>
