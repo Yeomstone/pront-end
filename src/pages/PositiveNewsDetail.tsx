@@ -43,11 +43,13 @@ interface News {
 interface YearStats {
   year: number;
   count: number;
+  [key: string]: number; // 인덱스 시그니처 추가
 }
 
 interface CategoryStats {
   category: string;
   count: number;
+  [key: string]: string | number; // 인덱스 시그니처 추가 - string과 number 모두 허용
 }
 
 const PositiveNewsDetail = () => {
@@ -121,117 +123,35 @@ const PositiveNewsDetail = () => {
     window.open(url, "_blank");
   };
 
-  const renderPagination = () => {
-    const pages = [];
-    const maxVisible = 5;
-    let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
-    let endPage = Math.min(totalPages, startPage + maxVisible - 1);
-
-    if (endPage - startPage < maxVisible - 1) {
-      startPage = Math.max(1, endPage - maxVisible + 1);
-    }
-
-    for (let i = startPage; i <= endPage; i++) {
-      pages.push(
-        <button
-          key={i}
-          onClick={() => setCurrentPage(i)}
-          style={{
-            padding: "8px 12px",
-            margin: "0 4px",
-            border: "1px solid #e5e7eb",
-            borderRadius: "6px",
-            background: i === currentPage ? "#3b82f6" : "white",
-            color: i === currentPage ? "white" : "#374151",
-            cursor: "pointer",
-            fontWeight: i === currentPage ? "bold" : "normal",
-          }}
-        >
-          {i}
-        </button>
-      );
-    }
-
-    return (
-      <div
+  return (
+    <div style={{ padding: "24px", maxWidth: "1200px", margin: "0 auto" }}>
+      {/* Title */}
+      <h1
         style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          marginTop: "32px",
+          fontSize: "32px",
+          fontWeight: "bold",
+          marginBottom: "32px",
+          color: "#111827",
         }}
       >
-        <button
-          onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-          disabled={currentPage === 1}
-          style={{
-            padding: "8px 16px",
-            border: "1px solid #e5e7eb",
-            borderRadius: "6px",
-            background: "white",
-            cursor: currentPage === 1 ? "not-allowed" : "pointer",
-            opacity: currentPage === 1 ? 0.5 : 1,
-            marginRight: "8px",
-          }}
-        >
-          이전
-        </button>
+        📰 긍정 뉴스 수집
+      </h1>
 
-        {pages}
-
-        <button
-          onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-          disabled={currentPage === totalPages}
-          style={{
-            padding: "8px 16px",
-            border: "1px solid #e5e7eb",
-            borderRadius: "6px",
-            background: "white",
-            cursor: currentPage === totalPages ? "not-allowed" : "pointer",
-            opacity: currentPage === totalPages ? 0.5 : 1,
-            marginLeft: "8px",
-          }}
-        >
-          다음
-        </button>
-      </div>
-    );
-  };
-
-  return (
-    <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "24px" }}>
-      {/* Header */}
-      <div style={{ marginBottom: "32px" }}>
-        <h1
-          style={{
-            fontSize: "32px",
-            fontWeight: "bold",
-            color: "#111827",
-            marginBottom: "8px",
-          }}
-        >
-          긍정 뉴스
-        </h1>
-        <p style={{ color: "#6b7280", fontSize: "16px" }}>
-          기업의 사회공헌 활동 및 긍정적인 영향력을 확인하세요
-        </p>
-      </div>
-
-      {/* Statistics Section */}
+      {/* Statistics Charts */}
       <div
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))",
           gap: "24px",
-          marginBottom: "32px",
+          marginBottom: "24px",
         }}
       >
-        {/* 연도별 통계 */}
+        {/* Year Statistics */}
         <div
           style={{
             background: "white",
             borderRadius: "12px",
-            padding: "24px",
+            padding: "20px",
             boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
           }}
         >
@@ -243,24 +163,24 @@ const PositiveNewsDetail = () => {
               color: "#111827",
             }}
           >
-            📊 연도별 긍정 뉴스
+            📅 연도별 뉴스 수
           </h3>
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={yearStats}>
               <XAxis dataKey="year" />
               <YAxis />
               <Tooltip />
-              <Bar dataKey="count" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+              <Bar dataKey="count" fill="#3b82f6" />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
-        {/* 카테고리별 통계 */}
+        {/* Category Statistics */}
         <div
           style={{
             background: "white",
             borderRadius: "12px",
-            padding: "24px",
+            padding: "20px",
             boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
           }}
         >
@@ -419,114 +339,114 @@ const PositiveNewsDetail = () => {
               style={{
                 display: "flex",
                 justifyContent: "space-between",
-                alignItems: "start",
+                alignItems: "flex-start",
                 marginBottom: "12px",
               }}
             >
-              <div style={{ flex: 1 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "8px",
-                    marginBottom: "8px",
-                    alignItems: "center",
-                  }}
-                >
-                  {item.category && (
-                    <span
-                      style={{
-                        padding: "4px 12px",
-                        borderRadius: "12px",
-                        fontSize: "12px",
-                        fontWeight: "600",
-                        background:
-                          CATEGORY_COLORS[
-                            item.category as keyof typeof CATEGORY_COLORS
-                          ] || "#e5e7eb",
-                        color: "white",
-                      }}
-                    >
-                      {item.category}
-                    </span>
-                  )}
-                  <span style={{ fontSize: "14px", color: "#6b7280" }}>
-                    {new Date(item.publishedDate).toLocaleDateString("ko-KR")}
-                  </span>
-                </div>
+              <h3
+                style={{
+                  fontSize: "18px",
+                  fontWeight: "600",
+                  color: "#111827",
+                  flex: 1,
+                  marginRight: "16px",
+                }}
+              >
+                {item.title}
+              </h3>
+              <span
+                style={{
+                  padding: "4px 12px",
+                  background:
+                    CATEGORY_COLORS[
+                      item.category as keyof typeof CATEGORY_COLORS
+                    ] || "#e5e7eb",
+                  color: "white",
+                  borderRadius: "16px",
+                  fontSize: "12px",
+                  fontWeight: "500",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {item.category}
+              </span>
+            </div>
 
-                <h3
-                  style={{
-                    fontSize: "18px",
-                    fontWeight: "600",
-                    color: "#111827",
-                    marginBottom: "8px",
-                    lineHeight: "1.5",
-                  }}
-                >
-                  {item.title}
-                </h3>
+            <p
+              style={{
+                color: "#6b7280",
+                fontSize: "14px",
+                lineHeight: "1.6",
+                marginBottom: "12px",
+              }}
+            >
+              {item.description}
+            </p>
 
-                {item.description && (
-                  <p
-                    style={{
-                      fontSize: "14px",
-                      color: "#6b7280",
-                      lineHeight: "1.6",
-                      marginBottom: "12px",
-                    }}
-                  >
-                    {item.description}
-                  </p>
-                )}
-
-                {item.matchedKeywords && (
-                  <div
-                    style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}
-                  >
-                    {item.matchedKeywords.split(",").map((keyword, idx) => (
-                      <span
-                        key={idx}
-                        style={{
-                          padding: "2px 8px",
-                          borderRadius: "6px",
-                          fontSize: "12px",
-                          background: "#f3f4f6",
-                          color: "#4b5563",
-                        }}
-                      >
-                        #{keyword.trim()}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div style={{ marginLeft: "16px" }}>
-                <svg
-                  width="24"
-                  height="24"
-                  fill="none"
-                  stroke="#9ca3af"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M7 17L17 7M17 7H7M17 7V17" />
-                </svg>
-              </div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                fontSize: "13px",
+                color: "#9ca3af",
+              }}
+            >
+              <span>{item.publishedDate}</span>
+              <span>키워드: {item.matchedKeywords}</span>
             </div>
           </div>
         ))}
       </div>
 
       {/* Pagination */}
-      {totalPages > 1 && renderPagination()}
+      {totalPages > 1 && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            gap: "8px",
+            marginTop: "32px",
+          }}
+        >
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            style={{
+              padding: "8px 16px",
+              border: "1px solid #e5e7eb",
+              borderRadius: "6px",
+              background: currentPage === 1 ? "#f3f4f6" : "white",
+              cursor: currentPage === 1 ? "not-allowed" : "pointer",
+            }}
+          >
+            이전
+          </button>
 
-      {/* Empty State */}
-      {news.length === 0 && (
-        <div style={{ textAlign: "center", padding: "48px", color: "#9ca3af" }}>
-          <p style={{ fontSize: "18px", marginBottom: "8px" }}>📰</p>
-          <p>해당 조건의 뉴스가 없습니다</p>
+          <span
+            style={{
+              padding: "8px 16px",
+              display: "flex",
+              alignItems: "center",
+              color: "#374151",
+            }}
+          >
+            {currentPage} / {totalPages}
+          </span>
+
+          <button
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+            style={{
+              padding: "8px 16px",
+              border: "1px solid #e5e7eb",
+              borderRadius: "6px",
+              background: currentPage === totalPages ? "#f3f4f6" : "white",
+              cursor: currentPage === totalPages ? "not-allowed" : "pointer",
+            }}
+          >
+            다음
+          </button>
         </div>
       )}
     </div>
