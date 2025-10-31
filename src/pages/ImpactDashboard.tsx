@@ -69,19 +69,48 @@ interface OrgData {
 export default function ImpactDashboard() {
   const navigate = useNavigate();
   const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8080";
+  console.log("🌐 API_BASE:", API_BASE);
 
   const [isApiConnected, setIsApiConnected] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [recentNews, setRecentNews] = useState<any[]>([]);
   const [newsStats, setNewsStats] = useState({ total: 0, thisMonth: 0 });
 
-  const [organizations, setOrganizations] = useState<any[]>([]);
-  const [currentOrgIndex, setCurrentOrgIndex] = useState(0);
-  const [currentOrgData, setCurrentOrgData] = useState<OrgData | null>(null);
-  const [isTransitioning, setIsTransitioning] = useState(false);
+  // 온실가스 배출량 전용
+  const [emissionsOrgs, setEmissionsOrgs] = useState<any[]>([]);
+  const [emissionsOrgIndex, setEmissionsOrgIndex] = useState(0);
+  const [emissionsOrgData, setEmissionsOrgData] = useState<{
+    id: number;
+    name: string;
+    emissions: number;
+    emissionsYear: number;
+  } | null>(null);
+  const [isEmissionsTransitioning, setIsEmissionsTransitioning] =
+    useState(false);
+
+  // 기부금 전용
+  const [donationsOrgs, setDonationsOrgs] = useState<any[]>([]);
+  const [donationsOrgIndex, setDonationsOrgIndex] = useState(0);
+  const [donationsOrgData, setDonationsOrgData] = useState<{
+    id: number;
+    name: string;
+    donations: number;
+    donationsYear: number;
+  } | null>(null);
+  const [isDonationsTransitioning, setIsDonationsTransitioning] =
+    useState(false);
+
+  // 데이터 캐시 (성능 최적화)
+  const [emissionsCache, setEmissionsCache] = useState<Map<number, any[]>>(
+    new Map()
+  );
+  const [donationsCache, setDonationsCache] = useState<Map<number, any[]>>(
+    new Map()
+  );
 
   // API 연결 확인
   useEffect(() => {
+    console.log("🚀 ImpactDashboard 마운트됨 - 초기 데이터 로딩 시작");
     checkApiConnection();
     loadInitialData();
   }, []);
@@ -94,27 +123,61 @@ export default function ImpactDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  // 자동 조직 데이터 순환 (3초마다)
+  // 온실가스 자동 순환 (3초마다 랜덤)
   useEffect(() => {
-    if (organizations.length === 0) return;
+    if (emissionsOrgs.length === 0) return;
 
     const interval = setInterval(() => {
-      setIsTransitioning(true);
+      setIsEmissionsTransitioning(true);
       setTimeout(() => {
-        setCurrentOrgIndex((prev) => (prev + 1) % organizations.length);
-        setIsTransitioning(false);
-      }, 300); // 페이드 아웃 시간
+        let newIndex;
+        do {
+          newIndex = Math.floor(Math.random() * emissionsOrgs.length);
+        } while (newIndex === emissionsOrgIndex && emissionsOrgs.length > 1);
+
+        console.log(`🌱 온실가스 조직 변경: ${emissionsOrgs[newIndex]?.name}`);
+        setEmissionsOrgIndex(newIndex);
+        setIsEmissionsTransitioning(false);
+      }, 300);
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [organizations]);
+  }, [emissionsOrgs, emissionsOrgIndex]);
 
-  // 조직이 변경될 때마다 데이터 로드
+  // 온실가스 조직 변경 시 데이터 로드
   useEffect(() => {
-    if (organizations.length > 0) {
-      loadOrgData(organizations[currentOrgIndex].id);
+    if (emissionsOrgs.length > 0) {
+      loadEmissionsDataFromCache(emissionsOrgs[emissionsOrgIndex].id);
     }
-  }, [currentOrgIndex, organizations]);
+  }, [emissionsOrgIndex, emissionsOrgs]);
+
+  // 기부금 자동 순환 (3초마다 랜덤)
+  useEffect(() => {
+    if (donationsOrgs.length === 0) return;
+
+    const interval = setInterval(() => {
+      setIsDonationsTransitioning(true);
+      setTimeout(() => {
+        let newIndex;
+        do {
+          newIndex = Math.floor(Math.random() * donationsOrgs.length);
+        } while (newIndex === donationsOrgIndex && donationsOrgs.length > 1);
+
+        console.log(`💰 기부금 조직 변경: ${donationsOrgs[newIndex]?.name}`);
+        setDonationsOrgIndex(newIndex);
+        setIsDonationsTransitioning(false);
+      }, 300);
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [donationsOrgs, donationsOrgIndex]);
+
+  // 기부금 조직 변경 시 데이터 로드
+  useEffect(() => {
+    if (donationsOrgs.length > 0) {
+      loadDonationsDataFromCache(donationsOrgs[donationsOrgIndex].id);
+    }
+  }, [donationsOrgIndex, donationsOrgs]);
 
   const checkApiConnection = async () => {
     try {
@@ -125,60 +188,102 @@ export default function ImpactDashboard() {
     }
   };
 
-  const filterOrganizationsWithData = async (orgs: any[]) => {
-    const orgsWithData: any[] = [];
+  // 🚀 최적화된 필터링: 한 번의 API 호출로 모든 데이터 가져오기
+  const filterOrgsWithData = async (orgs: any[]) => {
+    console.log(`🔍 조직 데이터 필터링 시작 (최적화됨)...`);
 
-    // 병렬로 모든 조직 체크 (처음 50개만)
-    const checkPromises = orgs.slice(0, 50).map(async (org) => {
-      try {
-        // 온실가스 데이터 확인
-        const emissionsRes = await fetch(
-          `${API_BASE}/api/emissions/organization/${org.id}`
-        );
-        const hasEmissions =
-          emissionsRes.ok && (await emissionsRes.json()).length > 0;
+    try {
+      // 모든 배출량 데이터를 한 번에 가져오기
+      const emissionsRes = await fetch(`${API_BASE}/api/emissions`);
+      const allEmissions = emissionsRes.ok ? await emissionsRes.json() : [];
 
-        // 기부금 데이터 확인
-        const donationsRes = await fetch(
-          `${API_BASE}/api/donations/organization/${org.id}`
-        );
-        const hasDonations =
-          donationsRes.ok && (await donationsRes.json()).length > 0;
+      // 모든 기부금 데이터를 한 번에 가져오기
+      const donationsRes = await fetch(`${API_BASE}/api/donations`);
+      const allDonations = donationsRes.ok ? await donationsRes.json() : [];
 
-        // 둘 중 하나라도 데이터가 있으면 포함
-        if (hasEmissions || hasDonations) {
-          return org;
+      console.log(
+        `📊 전체 배출량: ${allEmissions.length}개, 기부금: ${allDonations.length}개`
+      );
+
+      // 조직별로 데이터 그룹화
+      const emissionsMap = new Map();
+      allEmissions.forEach((e: any) => {
+        if (!emissionsMap.has(e.organizationId)) {
+          emissionsMap.set(e.organizationId, []);
         }
-        return null;
-      } catch (error) {
-        return null;
-      }
-    });
+        emissionsMap.get(e.organizationId).push(e);
+      });
 
-    const results = await Promise.all(checkPromises);
-    return results.filter((org) => org !== null);
+      const donationsMap = new Map();
+      allDonations.forEach((d: any) => {
+        if (!donationsMap.has(d.organizationId)) {
+          donationsMap.set(d.organizationId, []);
+        }
+        donationsMap.get(d.organizationId).push(d);
+      });
+
+      // 배출량이 있는 조직
+      const emissionsOrgs = orgs.filter((org) => emissionsMap.has(org.id));
+      console.log(`🌱 배출량 데이터가 있는 조직: ${emissionsOrgs.length}개`);
+
+      // 기부금이 있는 조직
+      const donationsOrgs = orgs.filter((org) => donationsMap.has(org.id));
+      console.log(`💰 기부금 데이터가 있는 조직: ${donationsOrgs.length}개`);
+
+      return {
+        emissionsOrgs,
+        donationsOrgs,
+        emissionsMap,
+        donationsMap,
+      };
+    } catch (error) {
+      console.error("❌ 데이터 필터링 실패:", error);
+      return {
+        emissionsOrgs: [],
+        donationsOrgs: [],
+        emissionsMap: new Map(),
+        donationsMap: new Map(),
+      };
+    }
   };
 
   const loadInitialData = async () => {
     try {
-      // 조직 목록 로드
+      console.log("📡 API 호출: 조직 목록 가져오기");
       const orgsRes = await fetch(`${API_BASE}/api/organizations`);
+      console.log(`📡 API 응답 상태: ${orgsRes.status} ${orgsRes.statusText}`);
+
       if (orgsRes.ok) {
         const orgs = await orgsRes.json();
+        console.log(`✅ 전체 조직 수: ${orgs.length}개`);
 
-        // 데이터가 있는 조직만 필터링
-        const orgsWithData = await filterOrganizationsWithData(orgs);
+        // 🚀 최적화: 한 번에 모든 데이터 필터링
+        const { emissionsOrgs, donationsOrgs, emissionsMap, donationsMap } =
+          await filterOrgsWithData(orgs);
 
-        if (orgsWithData.length > 0) {
-          // 랜덤하게 섞기
-          const shuffled = orgsWithData.sort(() => Math.random() - 0.5);
-          setOrganizations(shuffled);
+        // 캐시 저장
+        setEmissionsCache(emissionsMap);
+        setDonationsCache(donationsMap);
 
-          // 첫 번째 조직의 데이터 로드
-          loadOrgData(shuffled[0].id);
+        // 온실가스 조직 설정
+        if (emissionsOrgs.length > 0) {
+          const shuffled = emissionsOrgs.sort(() => Math.random() - 0.5);
+          setEmissionsOrgs(shuffled);
+          loadEmissionsDataFromCache(shuffled[0].id, emissionsMap);
         } else {
-          console.warn("데이터가 있는 조직을 찾을 수 없습니다.");
+          console.warn("⚠️ 배출량 데이터가 있는 조직이 없습니다");
         }
+
+        // 기부금 조직 설정
+        if (donationsOrgs.length > 0) {
+          const shuffled = donationsOrgs.sort(() => Math.random() - 0.5);
+          setDonationsOrgs(shuffled);
+          loadDonationsDataFromCache(shuffled[0].id, donationsMap);
+        } else {
+          console.warn("⚠️ 기부금 데이터가 있는 조직이 없습니다");
+        }
+      } else {
+        console.error(`❌ API 호출 실패: ${orgsRes.status}`);
       }
 
       // 뉴스 통계
@@ -193,72 +298,58 @@ export default function ImpactDashboard() {
         });
       }
 
-      // 최근 뉴스
-      if (orgsWithData.length > 0) {
-        const newsRes = await fetch(
-          `${API_BASE}/api/positive-news/organization/${orgsWithData[0].id}/recent`
-        );
-        if (newsRes.ok) {
-          const news = await newsRes.json();
-          setRecentNews(news.slice(0, 3));
-        }
-      }
+      // 최근 뉴스 (온실가스 조직 또는 기부금 조직 사용)
+      // 여기서는 뉴스 기능 생략
     } catch (error) {
       console.error("초기 데이터 로드 실패:", error);
     }
   };
 
-  const loadOrgData = async (orgId: number) => {
-    try {
-      const org = organizations.find((o) => o.id === orgId);
-      if (!org) return;
+  // 🚀 캐시에서 온실가스 데이터 로드 (API 호출 없음)
+  const loadEmissionsDataFromCache = (
+    orgId: number,
+    cache?: Map<number, any[]>
+  ) => {
+    const org = emissionsOrgs.find((o) => o.id === orgId);
+    if (!org) return;
 
-      // 온실가스 배출량 (최신 데이터)
-      const emissionsRes = await fetch(
-        `${API_BASE}/api/emissions/organization/${orgId}`
-      );
-      let emissionsData = { totalEmissions: 0, year: 0 };
+    const dataCache = cache || emissionsCache;
+    const emissions = dataCache.get(orgId) || [];
 
-      if (emissionsRes.ok) {
-        const emissions = await emissionsRes.json();
-        if (emissions.length > 0) {
-          // 최신 연도 데이터 찾기
-          const latest = emissions.sort((a: any, b: any) => b.year - a.year)[0];
-          emissionsData = {
-            totalEmissions: latest.totalEmissions || 0,
-            year: latest.year || 0,
-          };
-        }
-      }
-
-      // 기부금 (최신 데이터)
-      const donationsRes = await fetch(
-        `${API_BASE}/api/donations/organization/${orgId}`
-      );
-      let donationsData = { amount: 0, year: 0 };
-
-      if (donationsRes.ok) {
-        const donations = await donationsRes.json();
-        if (donations.length > 0) {
-          // 최신 연도 데이터 찾기
-          const latest = donations.sort((a: any, b: any) => b.year - a.year)[0];
-          donationsData = {
-            amount: latest.amount || 0,
-            year: latest.year || 0,
-          };
-        }
-      }
-
-      setCurrentOrgData({
+    if (emissions.length > 0) {
+      const latest = emissions.sort((a: any, b: any) => b.year - a.year)[0];
+      setEmissionsOrgData({
         id: orgId,
         name: org.name,
-        emissions: emissionsData.totalEmissions,
-        emissionsYear: emissionsData.year,
-        donations: donationsData.amount,
-        donationsYear: donationsData.year,
+        emissions: latest.totalEmissions || 0,
+        emissionsYear: latest.year || 0,
       });
-    } catch (error) {
-      console.error("조직 데이터 로드 실패:", error);
+      console.log(
+        `✅ ${org.name} 배출량: ${latest.totalEmissions} tCO₂e (캐시)`
+      );
+    }
+  };
+
+  // 🚀 캐시에서 기부금 데이터 로드 (API 호출 없음)
+  const loadDonationsDataFromCache = (
+    orgId: number,
+    cache?: Map<number, any[]>
+  ) => {
+    const org = donationsOrgs.find((o) => o.id === orgId);
+    if (!org) return;
+
+    const dataCache = cache || donationsCache;
+    const donations = dataCache.get(orgId) || [];
+
+    if (donations.length > 0) {
+      const latest = donations.sort((a: any, b: any) => b.year - a.year)[0];
+      setDonationsOrgData({
+        id: orgId,
+        name: org.name,
+        donations: latest.amount || 0,
+        donationsYear: latest.year || 0,
+      });
+      console.log(`✅ ${org.name} 기부금: ${latest.amount}원 (캐시)`);
     }
   };
 
@@ -666,7 +757,7 @@ export default function ImpactDashboard() {
               background: COLORS.cardBg,
               cursor: "pointer",
               transition: "all 0.3s",
-              opacity: isTransitioning ? 0.5 : 1,
+              opacity: isEmissionsTransitioning ? 0.5 : 1,
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = "translateY(-4px)";
@@ -720,7 +811,7 @@ export default function ImpactDashboard() {
               </p>
 
               {/* 회사명 표시 */}
-              {currentOrgData && (
+              {emissionsOrgData && (
                 <div
                   style={{
                     display: "flex",
@@ -750,7 +841,7 @@ export default function ImpactDashboard() {
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {currentOrgData.name}
+                    {emissionsOrgData.name}
                   </span>
                 </div>
               )}
@@ -770,8 +861,8 @@ export default function ImpactDashboard() {
                     marginBottom: "4px",
                   }}
                 >
-                  {currentOrgData
-                    ? fmt.format(Math.round(currentOrgData.emissions))
+                  {emissionsOrgData
+                    ? fmt.format(Math.round(emissionsOrgData.emissions))
                     : "0"}
                 </div>
                 <div
@@ -782,8 +873,8 @@ export default function ImpactDashboard() {
                   }}
                 >
                   톤 CO₂e{" "}
-                  {currentOrgData?.emissionsYear
-                    ? `(${currentOrgData.emissionsYear}년)`
+                  {emissionsOrgData?.emissionsYear
+                    ? `(${emissionsOrgData.emissionsYear}년)`
                     : ""}
                 </div>
               </div>
@@ -818,7 +909,7 @@ export default function ImpactDashboard() {
               background: COLORS.cardBg,
               cursor: "pointer",
               transition: "all 0.3s",
-              opacity: isTransitioning ? 0.5 : 1,
+              opacity: isDonationsTransitioning ? 0.5 : 1,
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = "translateY(-4px)";
@@ -868,7 +959,7 @@ export default function ImpactDashboard() {
               </p>
 
               {/* 회사명 표시 */}
-              {currentOrgData && (
+              {donationsOrgData && (
                 <div
                   style={{
                     display: "flex",
@@ -894,7 +985,7 @@ export default function ImpactDashboard() {
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {currentOrgData.name}
+                    {donationsOrgData.name}
                   </span>
                 </div>
               )}
@@ -914,8 +1005,8 @@ export default function ImpactDashboard() {
                     marginBottom: "4px",
                   }}
                 >
-                  {currentOrgData
-                    ? fmt.format(Math.floor(currentOrgData.donations / 1000))
+                  {donationsOrgData
+                    ? fmt.format(Math.floor(donationsOrgData.donations / 1000))
                     : "0"}
                 </div>
                 <div
@@ -926,8 +1017,8 @@ export default function ImpactDashboard() {
                   }}
                 >
                   천원{" "}
-                  {currentOrgData?.donationsYear
-                    ? `(${currentOrgData.donationsYear}년)`
+                  {donationsOrgData?.donationsYear
+                    ? `(${donationsOrgData.donationsYear}년)`
                     : ""}
                 </div>
               </div>
