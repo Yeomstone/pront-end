@@ -57,15 +57,6 @@ const SLIDE_IMAGES = [
   },
 ];
 
-interface OrgData {
-  id: number;
-  name: string;
-  emissions: number;
-  emissionsYear: number;
-  donations: number;
-  donationsYear: number;
-}
-
 export default function ImpactDashboard() {
   const navigate = useNavigate();
   const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8080";
@@ -205,30 +196,56 @@ export default function ImpactDashboard() {
         `📊 전체 배출량: ${allEmissions.length}개, 기부금: ${allDonations.length}개`
       );
 
-      // 조직별로 데이터 그룹화
+      // 조직별로 데이터 그룹화 - 배출량
       const emissionsMap = new Map();
       allEmissions.forEach((e: any) => {
-        if (!emissionsMap.has(e.organizationId)) {
-          emissionsMap.set(e.organizationId, []);
+        const orgId = e.organizationId || e.organization?.id;
+        if (orgId) {
+          if (!emissionsMap.has(orgId)) {
+            emissionsMap.set(orgId, []);
+          }
+          emissionsMap.get(orgId).push(e);
         }
-        emissionsMap.get(e.organizationId).push(e);
       });
 
+      // 조직별로 데이터 그룹화 - 기부금 (✅ 수정됨)
       const donationsMap = new Map();
       allDonations.forEach((d: any) => {
-        if (!donationsMap.has(d.organizationId)) {
-          donationsMap.set(d.organizationId, []);
+        // organization.id 또는 organizationId 둘 다 체크
+        const orgId = d.organizationId || d.organization?.id;
+
+        if (orgId) {
+          if (!donationsMap.has(orgId)) {
+            donationsMap.set(orgId, []);
+          }
+          donationsMap.get(orgId).push({
+            ...d,
+            // donationAmount가 BigDecimal이거나 문자열일 수 있으므로 정규화
+            amount:
+              typeof d.donationAmount === "number"
+                ? d.donationAmount
+                : Number(d.donationAmount || 0),
+            year: d.year,
+          });
+        } else {
+          console.warn("⚠️ 기부금 데이터에 조직 ID 없음:", d);
         }
-        donationsMap.get(d.organizationId).push(d);
       });
 
       // 배출량이 있는 조직
       const emissionsOrgs = orgs.filter((org) => emissionsMap.has(org.id));
       console.log(`🌱 배출량 데이터가 있는 조직: ${emissionsOrgs.length}개`);
 
-      // 기부금이 있는 조직
-      const donationsOrgs = orgs.filter((org) => donationsMap.has(org.id));
+      // 기부금이 있는 조직 (✅ 수정됨)
+      const donationsOrgs = orgs.filter((org) => {
+        const hasDonations = donationsMap.has(org.id);
+        if (hasDonations) {
+          console.log(`✅ 기부금 있음: ${org.name} (ID: ${org.id})`);
+        }
+        return hasDonations;
+      });
       console.log(`💰 기부금 데이터가 있는 조직: ${donationsOrgs.length}개`);
+      console.log(`📊 기부금 맵 크기: ${donationsMap.size}개`);
 
       return {
         emissionsOrgs,
@@ -297,9 +314,6 @@ export default function ImpactDashboard() {
           thisMonth: Math.floor(data.total * 0.15),
         });
       }
-
-      // 최근 뉴스 (온실가스 조직 또는 기부금 조직 사용)
-      // 여기서는 뉴스 기능 생략
     } catch (error) {
       console.error("초기 데이터 로드 실패:", error);
     }
@@ -311,10 +325,15 @@ export default function ImpactDashboard() {
     cache?: Map<number, any[]>
   ) => {
     const org = emissionsOrgs.find((o) => o.id === orgId);
-    if (!org) return;
+    if (!org) {
+      console.warn(`⚠️ 온실가스 조직을 찾을 수 없음: ID ${orgId}`);
+      return;
+    }
 
     const dataCache = cache || emissionsCache;
     const emissions = dataCache.get(orgId) || [];
+
+    console.log(`📊 ${org.name} 온실가스 데이터:`, emissions);
 
     if (emissions.length > 0) {
       const latest = emissions.sort((a: any, b: any) => b.year - a.year)[0];
@@ -325,31 +344,50 @@ export default function ImpactDashboard() {
         emissionsYear: latest.year || 0,
       });
       console.log(
-        `✅ ${org.name} 배출량: ${latest.totalEmissions} tCO₂e (캐시)`
+        `✅ ${org.name} 배출량: ${fmt.format(latest.totalEmissions)} tCO₂e (${
+          latest.year
+        }년)`
       );
+    } else {
+      console.warn(`⚠️ ${org.name}에 온실가스 데이터가 없습니다`);
+      setEmissionsOrgData(null);
     }
   };
 
-  // 🚀 캐시에서 기부금 데이터 로드 (API 호출 없음)
+  // 🚀 캐시에서 기부금 데이터 로드 (API 호출 없음) - ✅ 수정됨
   const loadDonationsDataFromCache = (
     orgId: number,
     cache?: Map<number, any[]>
   ) => {
     const org = donationsOrgs.find((o) => o.id === orgId);
-    if (!org) return;
+    if (!org) {
+      console.warn(`⚠️ 기부금 조직을 찾을 수 없음: ID ${orgId}`);
+      return;
+    }
 
     const dataCache = cache || donationsCache;
     const donations = dataCache.get(orgId) || [];
 
+    console.log(`📊 ${org.name} 기부금 데이터:`, donations);
+
     if (donations.length > 0) {
       const latest = donations.sort((a: any, b: any) => b.year - a.year)[0];
+
+      // amount 필드를 사용 (이미 정규화됨)
+      const amount = latest.amount || 0;
+
       setDonationsOrgData({
         id: orgId,
         name: org.name,
-        donations: latest.amount || 0,
+        donations: amount,
         donationsYear: latest.year || 0,
       });
-      console.log(`✅ ${org.name} 기부금: ${latest.amount}원 (캐시)`);
+      console.log(
+        `✅ ${org.name} 기부금: ${fmt.format(amount)}원 (${latest.year}년)`
+      );
+    } else {
+      console.warn(`⚠️ ${org.name}에 기부금 데이터가 없습니다`);
+      setDonationsOrgData(null);
     }
   };
 
@@ -654,22 +692,28 @@ export default function ImpactDashboard() {
                   lineHeight: "1.6",
                 }}
               >
-                기업의 ESG 활동과 사회공헌 뉴스를 실시간으로 수집하고 분석합니다
+                기업의 ESG 활동과 사회공헌 소식
               </p>
 
               <div
                 style={{
-                  display: "flex",
-                  gap: "24px",
-                  marginBottom: "24px",
-                  paddingTop: "20px",
-                  borderTop: `1px solid ${COLORS.border}`,
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "16px",
+                  marginBottom: "20px",
                 }}
               >
-                <div>
+                <div
+                  style={{
+                    padding: "16px",
+                    background: "white",
+                    borderRadius: "12px",
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                >
                   <div
                     style={{
-                      fontSize: "36px",
+                      fontSize: "28px",
                       fontWeight: 800,
                       color: COLORS.accent,
                       marginBottom: "4px",
@@ -679,111 +723,130 @@ export default function ImpactDashboard() {
                   </div>
                   <div
                     style={{
-                      fontSize: "13px",
+                      fontSize: "12px",
                       color: COLORS.secondary,
                       fontWeight: 600,
                     }}
                   >
-                    총 뉴스 건수
+                    총 뉴스 수
                   </div>
                 </div>
+
                 <div
                   style={{
-                    borderLeft: `2px solid ${COLORS.border}`,
-                    paddingLeft: "24px",
+                    padding: "16px",
+                    background: "white",
+                    borderRadius: "12px",
+                    border: `1px solid ${COLORS.border}`,
                   }}
                 >
                   <div
                     style={{
-                      fontSize: "36px",
+                      fontSize: "28px",
                       fontWeight: 800,
                       color: COLORS.success,
                       marginBottom: "4px",
                     }}
                   >
-                    +{fmt.format(newsStats.thisMonth)}
+                    +{newsStats.thisMonth}
                   </div>
                   <div
                     style={{
-                      fontSize: "13px",
+                      fontSize: "12px",
                       color: COLORS.secondary,
                       fontWeight: 600,
                     }}
                   >
-                    이번 달 신규
+                    이번 달
                   </div>
                 </div>
               </div>
 
               <Button
-                onClick={() => navigate("/news")}
                 style={{
                   width: "100%",
                   background: COLORS.accent,
                   color: "white",
-                  padding: "14px",
-                  borderRadius: "10px",
-                  fontSize: "15px",
                   fontWeight: 600,
-                  border: "none",
-                  cursor: "pointer",
+                  padding: "12px",
+                  borderRadius: "10px",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   gap: "8px",
-                  transition: "all 0.2s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "#0284C7";
-                  e.currentTarget.style.transform = "translateY(-2px)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = COLORS.accent;
-                  e.currentTarget.style.transform = "translateY(0)";
+                  border: "none",
+                  cursor: "pointer",
                 }}
               >
-                뉴스 분석 보기
+                전체 뉴스 보기
                 <ArrowRight style={{ width: "18px", height: "18px" }} />
               </Button>
             </CardContent>
           </Card>
 
-          {/* 온실가스 카드 - 실시간 데이터 */}
+          {/* 온실가스 배출량 카드 */}
           <Card
             onClick={() => navigate("/emissions")}
             style={{
               borderRadius: "16px",
-              border: `1px solid ${COLORS.border}`,
-              background: COLORS.cardBg,
+              border: `2px solid #10B981`,
+              background: `linear-gradient(135deg, #10B98115 0%, #10B98105 100%)`,
               cursor: "pointer",
               transition: "all 0.3s",
-              opacity: isEmissionsTransitioning ? 0.5 : 1,
+              position: "relative",
+              overflow: "hidden",
+              opacity: isEmissionsTransitioning ? 0.7 : 1,
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = "translateY(-4px)";
               e.currentTarget.style.boxShadow =
-                "0 8px 30px rgba(16, 185, 129, 0.2)";
+                "0 8px 30px rgba(16, 185, 129, 0.25)";
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.transform = "translateY(0)";
               e.currentTarget.style.boxShadow = "none";
             }}
           >
-            <CardContent style={{ padding: "28px" }}>
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                right: 0,
+                width: "150px",
+                height: "150px",
+                background: `radial-gradient(circle, #10B98120 0%, transparent 70%)`,
+                pointerEvents: "none",
+              }}
+            />
+
+            <CardContent
+              style={{ padding: "24px", position: "relative", zIndex: 1 }}
+            >
               <div
                 style={{
-                  padding: "12px",
-                  background: `${COLORS.success}15`,
-                  borderRadius: "12px",
-                  marginBottom: "20px",
-                  width: "fit-content",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  marginBottom: "16px",
                 }}
               >
-                <Leaf
+                <div
                   style={{
-                    width: "28px",
-                    height: "28px",
-                    color: COLORS.success,
+                    padding: "10px",
+                    background: "#10B981",
+                    borderRadius: "10px",
+                  }}
+                >
+                  <Leaf
+                    style={{ width: "20px", height: "20px", color: "white" }}
+                  />
+                </div>
+                <ChevronRight
+                  style={{
+                    marginLeft: "auto",
+                    width: "20px",
+                    height: "20px",
+                    color: COLORS.secondary,
                   }}
                 />
               </div>
@@ -807,7 +870,7 @@ export default function ImpactDashboard() {
                   lineHeight: "1.5",
                 }}
               >
-                기업별 온실가스 배출 데이터 추적
+                기업의 탄소배출 현황 추적
               </p>
 
               {/* 회사명 표시 */}
@@ -819,17 +882,13 @@ export default function ImpactDashboard() {
                     gap: "8px",
                     marginBottom: "16px",
                     padding: "10px 12px",
-                    background: `${COLORS.success}10`,
+                    background: "#10B98110",
                     borderRadius: "8px",
-                    border: `1px solid ${COLORS.success}30`,
+                    border: "1px solid #10B98130",
                   }}
                 >
                   <Building2
-                    style={{
-                      width: "14px",
-                      height: "14px",
-                      color: COLORS.success,
-                    }}
+                    style={{ width: "14px", height: "14px", color: "#10B981" }}
                   />
                   <span
                     style={{
@@ -857,12 +916,12 @@ export default function ImpactDashboard() {
                   style={{
                     fontSize: "32px",
                     fontWeight: 800,
-                    color: COLORS.success,
+                    color: "#10B981",
                     marginBottom: "4px",
                   }}
                 >
                   {emissionsOrgData
-                    ? fmt.format(Math.round(emissionsOrgData.emissions))
+                    ? fmt.format(emissionsOrgData.emissions)
                     : "0"}
                 </div>
                 <div
@@ -872,7 +931,7 @@ export default function ImpactDashboard() {
                     fontWeight: 600,
                   }}
                 >
-                  톤 CO₂e{" "}
+                  tCO₂e{" "}
                   {emissionsOrgData?.emissionsYear
                     ? `(${emissionsOrgData.emissionsYear}년)`
                     : ""}
@@ -880,59 +939,96 @@ export default function ImpactDashboard() {
               </div>
 
               <Button
-                onClick={() => navigate("/emissions")}
-                variant="outline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate("/emissions");
+                }}
                 style={{
                   width: "100%",
-                  padding: "12px",
-                  borderRadius: "10px",
-                  fontSize: "14px",
+                  background: "#10B981",
+                  color: "white",
                   fontWeight: 600,
+                  padding: "10px",
+                  borderRadius: "8px",
+                  fontSize: "13px",
+                  border: "none",
+                  cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   gap: "6px",
                 }}
               >
-                상세 보기
-                <ChevronRight style={{ width: "16px", height: "16px" }} />
+                상세보기
+                <BarChart3 style={{ width: "16px", height: "16px" }} />
               </Button>
             </CardContent>
           </Card>
 
-          {/* 기부금 카드 - 실시간 데이터 */}
+          {/* 기부금 카드 */}
           <Card
             onClick={() => navigate("/donations")}
             style={{
               borderRadius: "16px",
-              border: `1px solid ${COLORS.border}`,
-              background: COLORS.cardBg,
+              border: `2px solid #6366F1`,
+              background: `linear-gradient(135deg, #6366F115 0%, #6366F105 100%)`,
               cursor: "pointer",
               transition: "all 0.3s",
-              opacity: isDonationsTransitioning ? 0.5 : 1,
+              position: "relative",
+              overflow: "hidden",
+              opacity: isDonationsTransitioning ? 0.7 : 1,
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = "translateY(-4px)";
               e.currentTarget.style.boxShadow =
-                "0 8px 30px rgba(99, 102, 241, 0.2)";
+                "0 8px 30px rgba(99, 102, 241, 0.25)";
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.transform = "translateY(0)";
               e.currentTarget.style.boxShadow = "none";
             }}
           >
-            <CardContent style={{ padding: "28px" }}>
+            <div
+              style={{
+                position: "absolute",
+                top: 0,
+                right: 0,
+                width: "150px",
+                height: "150px",
+                background: `radial-gradient(circle, #6366F120 0%, transparent 70%)`,
+                pointerEvents: "none",
+              }}
+            />
+
+            <CardContent
+              style={{ padding: "24px", position: "relative", zIndex: 1 }}
+            >
               <div
                 style={{
-                  padding: "12px",
-                  background: "#6366F115",
-                  borderRadius: "12px",
-                  marginBottom: "20px",
-                  width: "fit-content",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  marginBottom: "16px",
                 }}
               >
-                <DollarSign
-                  style={{ width: "28px", height: "28px", color: "#6366F1" }}
+                <div
+                  style={{
+                    padding: "10px",
+                    background: "#6366F1",
+                    borderRadius: "10px",
+                  }}
+                >
+                  <DollarSign
+                    style={{ width: "20px", height: "20px", color: "white" }}
+                  />
+                </div>
+                <ChevronRight
+                  style={{
+                    marginLeft: "auto",
+                    width: "20px",
+                    height: "20px",
+                    color: COLORS.secondary,
+                  }}
                 />
               </div>
 
@@ -1024,71 +1120,90 @@ export default function ImpactDashboard() {
               </div>
 
               <Button
-                onClick={() => navigate("/donations")}
-                variant="outline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate("/donations");
+                }}
                 style={{
                   width: "100%",
-                  padding: "12px",
-                  borderRadius: "10px",
-                  fontSize: "14px",
+                  background: "#6366F1",
+                  color: "white",
                   fontWeight: 600,
+                  padding: "10px",
+                  borderRadius: "8px",
+                  fontSize: "13px",
+                  border: "none",
+                  cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   gap: "6px",
                 }}
               >
-                상세 보기
-                <ChevronRight style={{ width: "16px", height: "16px" }} />
+                상세보기
+                <BarChart3 style={{ width: "16px", height: "16px" }} />
               </Button>
             </CardContent>
           </Card>
         </div>
 
         {/* 최근 뉴스 섹션 */}
-        <div>
+        <div
+          style={{
+            background: COLORS.cardBg,
+            borderRadius: "16px",
+            border: `1px solid ${COLORS.border}`,
+            padding: "32px",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+          }}
+        >
           <div
             style={{
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              marginBottom: "20px",
+              marginBottom: "24px",
             }}
           >
             <div>
-              <h2
+              <h3
                 style={{
-                  fontSize: "24px",
+                  fontSize: "20px",
                   fontWeight: 700,
                   color: COLORS.primary,
-                  marginBottom: "6px",
+                  marginBottom: "4px",
                 }}
               >
                 최근 긍정 뉴스
-              </h2>
+              </h3>
               <p
                 style={{
                   fontSize: "14px",
                   color: COLORS.secondary,
-                  fontWeight: 500,
                 }}
               >
-                실시간으로 수집된 최신 ESG 뉴스
+                기업의 최신 ESG 활동 소식
               </p>
             </div>
             <Button
               onClick={() => navigate("/news")}
               variant="outline"
               style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
                 padding: "10px 20px",
-                fontSize: "14px",
+                borderRadius: "10px",
                 fontWeight: 600,
+                fontSize: "14px",
+                border: `1px solid ${COLORS.border}`,
+                background: "white",
+                color: COLORS.primary,
+                cursor: "pointer",
               }}
             >
-              전체 보기
-              <ChevronRight
-                style={{ width: "16px", height: "16px", marginLeft: "4px" }}
-              />
+              전체보기
+              <ExternalLink style={{ width: "16px", height: "16px" }} />
             </Button>
           </div>
 
@@ -1100,59 +1215,44 @@ export default function ImpactDashboard() {
             }}
           >
             {recentNews.length > 0 ? (
-              recentNews.map((news, index) => (
+              recentNews.slice(0, 3).map((news, idx) => (
                 <Card
-                  key={index}
-                  onClick={() => window.open(news.url, "_blank")}
+                  key={idx}
                   style={{
                     borderRadius: "12px",
                     border: `1px solid ${COLORS.border}`,
                     cursor: "pointer",
-                    transition: "all 0.2s",
+                    transition: "all 0.3s",
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.boxShadow =
-                      "0 4px 16px rgba(0,0,0,0.1)";
                     e.currentTarget.style.transform = "translateY(-2px)";
+                    e.currentTarget.style.boxShadow =
+                      "0 4px 12px rgba(0,0,0,0.1)";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.boxShadow = "none";
                     e.currentTarget.style.transform = "translateY(0)";
+                    e.currentTarget.style.boxShadow = "none";
                   }}
+                  onClick={() => window.open(news.url, "_blank")}
                 >
                   <CardContent style={{ padding: "20px" }}>
-                    <div
+                    <Badge
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
+                        background: "#10B98115",
+                        color: COLORS.success,
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        padding: "4px 10px",
                         marginBottom: "12px",
                       }}
                     >
-                      <Badge
-                        style={{
-                          background: "#10B98115",
-                          color: COLORS.success,
-                          fontSize: "11px",
-                          fontWeight: 600,
-                          padding: "4px 10px",
-                        }}
-                      >
-                        {news.category}
-                      </Badge>
-                      <ExternalLink
-                        style={{
-                          width: "14px",
-                          height: "14px",
-                          color: COLORS.secondary,
-                        }}
-                      />
-                    </div>
+                      {news.category}
+                    </Badge>
 
                     <h4
                       style={{
                         fontSize: "15px",
-                        fontWeight: 600,
+                        fontWeight: 700,
                         color: COLORS.primary,
                         marginBottom: "8px",
                         lineHeight: "1.4",
@@ -1230,50 +1330,24 @@ export default function ImpactDashboard() {
                     <h4
                       style={{
                         fontSize: "15px",
-                        fontWeight: 600,
+                        fontWeight: 700,
                         color: COLORS.primary,
                         marginBottom: "8px",
-                        lineHeight: "1.4",
                       }}
                     >
-                      기업들의 탄소중립 실천, ESG 경영 강화
+                      탄소중립 달성을 위한 신기술 도입
                     </h4>
                     <p
                       style={{
                         fontSize: "13px",
                         color: COLORS.secondary,
                         lineHeight: "1.5",
-                        marginBottom: "12px",
                       }}
                     >
-                      국내 주요 기업들이 탄소중립 목표 달성을 위한 구체적인 실행
-                      계획을 발표했습니다...
+                      친환경 에너지 전환 프로젝트 시작
                     </p>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        paddingTop: "12px",
-                        borderTop: `1px solid ${COLORS.border}`,
-                      }}
-                    >
-                      <Calendar
-                        style={{
-                          width: "13px",
-                          height: "13px",
-                          color: COLORS.secondary,
-                        }}
-                      />
-                      <span
-                        style={{ fontSize: "12px", color: COLORS.secondary }}
-                      >
-                        2024-10-31
-                      </span>
-                    </div>
                   </CardContent>
                 </Card>
-
                 <Card
                   style={{
                     borderRadius: "12px",
@@ -1283,63 +1357,37 @@ export default function ImpactDashboard() {
                   <CardContent style={{ padding: "20px" }}>
                     <Badge
                       style={{
-                        background: "#6366F115",
-                        color: "#6366F1",
+                        background: "#8B5CF615",
+                        color: "#8B5CF6",
                         fontSize: "11px",
                         fontWeight: 600,
                         padding: "4px 10px",
                         marginBottom: "12px",
                       }}
                     >
-                      기부
+                      사회공헌
                     </Badge>
                     <h4
                       style={{
                         fontSize: "15px",
-                        fontWeight: 600,
+                        fontWeight: 700,
                         color: COLORS.primary,
                         marginBottom: "8px",
-                        lineHeight: "1.4",
                       }}
                     >
-                      지역사회 상생협력, 장학금 100억 전달
+                      지역사회 교육 지원 프로그램 확대
                     </h4>
                     <p
                       style={{
                         fontSize: "13px",
                         color: COLORS.secondary,
                         lineHeight: "1.5",
-                        marginBottom: "12px",
                       }}
                     >
-                      주요 기업들이 지역사회 발전을 위한 장학금 및 지원금을
-                      전달하며 상생 경영을 실천하고 있습니다...
+                      소외계층 학생 500명에게 장학금 전달
                     </p>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        paddingTop: "12px",
-                        borderTop: `1px solid ${COLORS.border}`,
-                      }}
-                    >
-                      <Calendar
-                        style={{
-                          width: "13px",
-                          height: "13px",
-                          color: COLORS.secondary,
-                        }}
-                      />
-                      <span
-                        style={{ fontSize: "12px", color: COLORS.secondary }}
-                      >
-                        2024-10-30
-                      </span>
-                    </div>
                   </CardContent>
                 </Card>
-
                 <Card
                   style={{
                     borderRadius: "12px",
@@ -1357,52 +1405,27 @@ export default function ImpactDashboard() {
                         marginBottom: "12px",
                       }}
                     >
-                      교육
+                      혁신
                     </Badge>
                     <h4
                       style={{
                         fontSize: "15px",
-                        fontWeight: 600,
+                        fontWeight: 700,
                         color: COLORS.primary,
                         marginBottom: "8px",
-                        lineHeight: "1.4",
                       }}
                     >
-                      청년 인재 양성 프로그램, 취업 지원 강화
+                      AI 기반 친환경 물류 시스템 구축
                     </h4>
                     <p
                       style={{
                         fontSize: "13px",
                         color: COLORS.secondary,
                         lineHeight: "1.5",
-                        marginBottom: "12px",
                       }}
                     >
-                      기업들이 청년 인재 육성을 위한 교육 프로그램과 멘토링을
-                      확대하고 있습니다...
+                      배송 효율성 30% 향상 및 탄소 절감
                     </p>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        paddingTop: "12px",
-                        borderTop: `1px solid ${COLORS.border}`,
-                      }}
-                    >
-                      <Calendar
-                        style={{
-                          width: "13px",
-                          height: "13px",
-                          color: COLORS.secondary,
-                        }}
-                      />
-                      <span
-                        style={{ fontSize: "12px", color: COLORS.secondary }}
-                      >
-                        2024-10-29
-                      </span>
-                    </div>
                   </CardContent>
                 </Card>
               </>
@@ -1410,44 +1433,6 @@ export default function ImpactDashboard() {
           </div>
         </div>
       </main>
-
-      {/* 푸터 */}
-      <footer
-        style={{
-          width: "100%",
-          backgroundColor: "white",
-          borderTop: `1px solid ${COLORS.border}`,
-          padding: "40px 0",
-          marginTop: "64px",
-        }}
-      >
-        <div
-          style={{
-            maxWidth: "1400px",
-            margin: "0 auto",
-            padding: "0 32px",
-            textAlign: "center",
-          }}
-        >
-          <p
-            style={{
-              fontSize: "14px",
-              color: COLORS.secondary,
-              marginBottom: "8px",
-            }}
-          >
-            © 2024 Social Impact Tracker. All rights reserved.
-          </p>
-          <p
-            style={{
-              fontSize: "13px",
-              color: COLORS.secondary,
-            }}
-          >
-            실시간 ESG 데이터 분석 플랫폼
-          </p>
-        </div>
-      </footer>
     </div>
   );
 }
