@@ -17,6 +17,11 @@ import {
   BarChart3,
   Activity,
   Building2,
+  MessageCircle,
+  Sparkles,
+  Zap,
+  Brain,
+  Bot,
 } from "lucide-react";
 
 const fmt = new Intl.NumberFormat("ko-KR");
@@ -31,6 +36,8 @@ const COLORS = {
   background: "#F8FAFC",
   cardBg: "#FFFFFF",
   border: "#E2E8F0",
+  aiPurple: "#8B5CF6",
+  aiPink: "#EC4899",
 };
 
 // 슬라이드 이미지 데이터
@@ -208,10 +215,9 @@ export default function ImpactDashboard() {
         }
       });
 
-      // 조직별로 데이터 그룹화 - 기부금 (✅ 수정됨)
+      // 조직별로 데이터 그룹화 - 기부금
       const donationsMap = new Map();
       allDonations.forEach((d: any) => {
-        // organization.id 또는 organizationId 둘 다 체크
         const orgId = d.organizationId || d.organization?.id;
 
         if (orgId) {
@@ -220,7 +226,6 @@ export default function ImpactDashboard() {
           }
           donationsMap.get(orgId).push({
             ...d,
-            // donationAmount가 BigDecimal이거나 문자열일 수 있으므로 정규화
             amount:
               typeof d.donationAmount === "number"
                 ? d.donationAmount
@@ -236,7 +241,7 @@ export default function ImpactDashboard() {
       const emissionsOrgs = orgs.filter((org) => emissionsMap.has(org.id));
       console.log(`🌱 배출량 데이터가 있는 조직: ${emissionsOrgs.length}개`);
 
-      // 기부금이 있는 조직 (✅ 수정됨)
+      // 기부금이 있는 조직
       const donationsOrgs = orgs.filter((org) => {
         const hasDonations = donationsMap.has(org.id);
         if (hasDonations) {
@@ -354,7 +359,7 @@ export default function ImpactDashboard() {
     }
   };
 
-  // 🚀 캐시에서 기부금 데이터 로드 (API 호출 없음) - ✅ 수정됨
+  // 🚀 캐시에서 기부금 데이터 로드 (API 호출 없음)
   const loadDonationsDataFromCache = (
     orgId: number,
     cache?: Map<number, any[]>
@@ -373,7 +378,6 @@ export default function ImpactDashboard() {
     if (donations.length > 0) {
       const latest = donations.sort((a: any, b: any) => b.year - a.year)[0];
 
-      // amount 필드를 사용 (이미 정규화됨)
       const amount = latest.amount || 0;
 
       setDonationsOrgData({
@@ -873,7 +877,6 @@ export default function ImpactDashboard() {
                 기업의 탄소배출 현황 추적
               </p>
 
-              {/* 회사명 표시 */}
               {emissionsOrgData && (
                 <div
                   style={{
@@ -1054,7 +1057,6 @@ export default function ImpactDashboard() {
                 기업의 사회공헌 기부금 내역
               </p>
 
-              {/* 회사명 표시 */}
               {donationsOrgData && (
                 <div
                   style={{
@@ -1145,6 +1147,380 @@ export default function ImpactDashboard() {
               </Button>
             </CardContent>
           </Card>
+        </div>
+
+        {/* ✨ AI 채팅 섹션 - 새로 추가! */}
+        <div
+          style={{
+            position: "relative",
+            borderRadius: "20px",
+            overflow: "hidden",
+            marginBottom: "32px",
+            background: `linear-gradient(135deg, ${COLORS.aiPurple} 0%, ${COLORS.aiPink} 100%)`,
+            boxShadow: "0 10px 40px rgba(139, 92, 246, 0.3)",
+          }}
+        >
+          {/* 배경 장식 */}
+          <div
+            style={{
+              position: "absolute",
+              top: "-50%",
+              right: "-20%",
+              width: "500px",
+              height: "500px",
+              background: "rgba(255, 255, 255, 0.1)",
+              borderRadius: "50%",
+              animation: "float 6s ease-in-out infinite",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              bottom: "-30%",
+              left: "-10%",
+              width: "400px",
+              height: "400px",
+              background: "rgba(255, 255, 255, 0.08)",
+              borderRadius: "50%",
+              animation: "float 8s ease-in-out infinite",
+              animationDelay: "2s",
+            }}
+          />
+
+          <div
+            style={{
+              position: "relative",
+              zIndex: 1,
+              padding: "48px",
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "48px",
+              alignItems: "center",
+            }}
+          >
+            {/* 왼쪽 - 텍스트 콘텐츠 */}
+            <div>
+              <Badge
+                style={{
+                  background: "rgba(255, 255, 255, 0.25)",
+                  color: "white",
+                  border: "1px solid rgba(255, 255, 255, 0.3)",
+                  padding: "6px 14px",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  marginBottom: "20px",
+                }}
+              >
+                <Sparkles
+                  style={{ width: "14px", height: "14px", marginRight: "6px" }}
+                />
+                AI 기반 분석
+              </Badge>
+
+              <h2
+                style={{
+                  fontSize: "42px",
+                  fontWeight: 800,
+                  color: "white",
+                  marginBottom: "16px",
+                  lineHeight: "1.2",
+                }}
+              >
+                AI와 채팅하기
+              </h2>
+
+              <p
+                style={{
+                  fontSize: "18px",
+                  color: "rgba(255, 255, 255, 0.95)",
+                  marginBottom: "32px",
+                  lineHeight: "1.6",
+                }}
+              >
+                최신 AI 기술로 임팩트 데이터를 분석하고, 전략적 인사이트를
+                얻으세요.
+              </p>
+
+              {/* 기능 카드들 */}
+              <div
+                style={{
+                  display: "grid",
+                  gap: "12px",
+                  marginBottom: "32px",
+                }}
+              >
+                {[
+                  {
+                    icon: Brain,
+                    title: "스마트 분석",
+                    desc: "데이터 기반 인사이트 제공",
+                  },
+                  {
+                    icon: BarChart3,
+                    title: "맞춤형 리포트",
+                    desc: "실시간 질의응답 및 리포트 생성",
+                  },
+                  {
+                    icon: Zap,
+                    title: "전략 수립",
+                    desc: "AI 기반 임팩트 전략 제안",
+                  },
+                ].map((feature, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "16px",
+                      padding: "16px 20px",
+                      background: "rgba(255, 255, 255, 0.15)",
+                      backdropFilter: "blur(10px)",
+                      borderRadius: "12px",
+                      border: "1px solid rgba(255, 255, 255, 0.2)",
+                      transition: "all 0.3s",
+                      cursor: "pointer",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background =
+                        "rgba(255, 255, 255, 0.2)";
+                      e.currentTarget.style.transform = "translateX(4px)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background =
+                        "rgba(255, 255, 255, 0.15)";
+                      e.currentTarget.style.transform = "translateX(0)";
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "48px",
+                        height: "48px",
+                        background: "white",
+                        borderRadius: "12px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <feature.icon
+                        style={{
+                          width: "24px",
+                          height: "24px",
+                          color: COLORS.aiPurple,
+                        }}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <h4
+                        style={{
+                          fontSize: "16px",
+                          fontWeight: 700,
+                          color: "white",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        {feature.title}
+                      </h4>
+                      <p
+                        style={{
+                          fontSize: "14px",
+                          color: "rgba(255, 255, 255, 0.85)",
+                          margin: 0,
+                        }}
+                      >
+                        {feature.desc}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* CTA 버튼 */}
+              <Button
+                onClick={() => navigate("/ai-chat")}
+                style={{
+                  background: "white",
+                  color: COLORS.aiPurple,
+                  fontWeight: 700,
+                  fontSize: "18px",
+                  padding: "16px 32px",
+                  borderRadius: "14px",
+                  border: "none",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  boxShadow: "0 8px 24px rgba(0, 0, 0, 0.2)",
+                  transition: "all 0.3s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform =
+                    "translateY(-3px) scale(1.05)";
+                  e.currentTarget.style.boxShadow =
+                    "0 12px 32px rgba(0, 0, 0, 0.3)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "translateY(0) scale(1)";
+                  e.currentTarget.style.boxShadow =
+                    "0 8px 24px rgba(0, 0, 0, 0.2)";
+                }}
+              >
+                <MessageCircle style={{ width: "22px", height: "22px" }} />
+                지금 대화 시작하기
+                <ArrowRight style={{ width: "20px", height: "20px" }} />
+              </Button>
+            </div>
+
+            {/* 오른쪽 - 채팅 프리뷰 */}
+            <div
+              style={{
+                background: "white",
+                borderRadius: "20px",
+                padding: "28px",
+                boxShadow: "0 20px 60px rgba(0, 0, 0, 0.3)",
+                maxWidth: "450px",
+              }}
+            >
+              {/* 채팅 헤더 */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "14px",
+                  marginBottom: "24px",
+                  paddingBottom: "18px",
+                  borderBottom: `2px solid ${COLORS.border}`,
+                }}
+              >
+                <div
+                  style={{
+                    width: "50px",
+                    height: "50px",
+                    background: `linear-gradient(135deg, ${COLORS.aiPurple} 0%, ${COLORS.aiPink} 100%)`,
+                    borderRadius: "50%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Bot
+                    style={{ width: "28px", height: "28px", color: "white" }}
+                  />
+                </div>
+                <div>
+                  <h4
+                    style={{
+                      fontSize: "17px",
+                      fontWeight: 700,
+                      color: COLORS.primary,
+                      marginBottom: "2px",
+                    }}
+                  >
+                    Impact AI Assistant
+                  </h4>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "8px",
+                        height: "8px",
+                        background: COLORS.success,
+                        borderRadius: "50%",
+                        animation: "pulse 2s infinite",
+                      }}
+                    />
+                    <span style={{ fontSize: "13px", color: COLORS.secondary }}>
+                      온라인
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 채팅 메시지들 */}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "12px",
+                }}
+              >
+                <div
+                  style={{
+                    padding: "14px 16px",
+                    background: "#F5F3FF",
+                    borderRadius: "16px",
+                    fontSize: "15px",
+                    color: COLORS.primary,
+                    lineHeight: "1.5",
+                    maxWidth: "85%",
+                  }}
+                >
+                  안녕하세요! 임팩트 데이터 분석을 도와드릴게요. 📊
+                </div>
+
+                <div
+                  style={{
+                    padding: "14px 16px",
+                    background: `linear-gradient(135deg, ${COLORS.aiPurple} 0%, ${COLORS.aiPink} 100%)`,
+                    borderRadius: "16px",
+                    fontSize: "15px",
+                    color: "white",
+                    lineHeight: "1.5",
+                    maxWidth: "85%",
+                    alignSelf: "flex-end",
+                  }}
+                >
+                  최근 프로젝트 성과를 분석해줄 수 있나요?
+                </div>
+
+                <div
+                  style={{
+                    padding: "14px 16px",
+                    background: "#F5F3FF",
+                    borderRadius: "16px",
+                    fontSize: "15px",
+                    color: COLORS.primary,
+                    lineHeight: "1.5",
+                    maxWidth: "85%",
+                  }}
+                >
+                  물론이죠! 지난 분기 데이터를 분석해드리겠습니다. 💡
+                </div>
+
+                {/* 타이핑 인디케이터 */}
+                <div
+                  style={{
+                    padding: "14px 16px",
+                    background: "#F5F3FF",
+                    borderRadius: "16px",
+                    maxWidth: "fit-content",
+                    display: "flex",
+                    gap: "6px",
+                  }}
+                >
+                  {[0, 1, 2].map((i) => (
+                    <div
+                      key={i}
+                      style={{
+                        width: "8px",
+                        height: "8px",
+                        background: COLORS.aiPurple,
+                        borderRadius: "50%",
+                        animation: "typing 1.4s infinite",
+                        animationDelay: `${i * 0.2}s`,
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* 최근 뉴스 섹션 */}
@@ -1433,6 +1809,24 @@ export default function ImpactDashboard() {
           </div>
         </div>
       </main>
+
+      {/* 애니메이션 CSS */}
+      <style>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-30px); }
+        }
+        
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+        
+        @keyframes typing {
+          0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+          30% { transform: translateY(-10px); opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }

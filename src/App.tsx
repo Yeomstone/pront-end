@@ -5,6 +5,7 @@ import DonationsDetail from "./pages/DonationsDetail";
 import VolunteerDetail from "./pages/VolunteerDetail";
 import PeopleServedDetail from "./pages/PeopleServedDetail";
 import PositiveNewsDetail from "./pages/PositiveNewsDetail";
+import AIChatPage from "./pages/AIChatPage";
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
         <Route path="/volunteer" element={<VolunteerDetail />} />
         <Route path="/people" element={<PeopleServedDetail />} />
         <Route path="/news" element={<PositiveNewsDetail />} />
+        <Route path="/ai-chat" element={<AIChatPage />} />
       </Routes>
     </BrowserRouter>
   );
